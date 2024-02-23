@@ -205,7 +205,7 @@ symbols_file = 'nifty_50.txt'
 EMA_PERIOD = 200
 VOLUME_SPIKE_WINDOW = 20
 AMOUNT_TO_INVEST = 20000
-from_date = '2019-01-01'
+from_date = '2022-01-01'
 to_date = '2024-12-31'
 ##############
 create_directory()
