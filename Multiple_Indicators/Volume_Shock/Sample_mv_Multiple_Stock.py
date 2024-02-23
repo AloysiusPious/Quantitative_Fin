@@ -162,16 +162,19 @@ def start_calc():
         # Assuming you have this function defined
         draw_chart(filtered_df, stock, buy_dates, buy_prices, EMA_PERIOD)
 
-    # Print summarized data in a table
+    # Convert summary data to DataFrame
+    summary_df = pd.DataFrame(summary_data,
+                              columns=['Stocks', 'Invested Amount', 'Current Value of Today', 'Cumulative Percentage'])
+
+    # Round numeric columns to two decimal places
+    summary_df[['Invested Amount', 'Current Value of Today', 'Cumulative Percentage']] = summary_df[
+        ['Invested Amount', 'Current Value of Today', 'Cumulative Percentage']].round(2)
+
     # Define the file path for the summary CSV
     summary_csv_path = "summary.csv"
 
     # Write the summary data to the CSV file
-    with open(summary_csv_path, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Stocks', 'Invested Amount', 'Current Value of Today', 'Cumulative Percentage'])
-        for row in summary_data:
-            writer.writerow([row[0], round(row[1], 2), round(row[2], 2), round(row[3], 2)])
+    summary_df.to_csv(summary_csv_path, index=False)
 
     # Print the summary data in tabular format
     print(
