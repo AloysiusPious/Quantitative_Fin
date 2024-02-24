@@ -4,8 +4,10 @@ import matplotlib.pyplot as plt
 import csv
 import os
 import sys
+
 sys.path.append('/Users/aloysiuspious/Personal/Algo/BackTest/my_lib')
 from yfin import *
+
 
 def create_master_sheet(from_date, to_date):
     # Read the list of stock names from the file
@@ -27,17 +29,23 @@ def create_master_sheet(from_date, to_date):
     master_df = pd.DataFrame(data)
 
     # Save the master DataFrame to a CSV file
-    master_df.to_csv('master.csv', index=False)
-def create_directory():
-    directories_to_create = ["Reports", "Charts", "Summary"]
+    master_df.to_csv(f'{symbols_type}_Master/master.csv', index=False)
+
+
+def create_directory(symbols_type):
+    directories_to_create = ["Reports", "Charts", "Summary", "Master"]
     # Iterate over each directory and create it if it does not exist
     for directory in directories_to_create:
+        directory_name = symbols_type + "_" + directory
+        print(directory_name)
         """Create directory if it does not exist"""
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-            print(f"Directory '{directory}' created successfully.")
+        if not os.path.exists(directory_name):
+            os.makedirs(directory_name)
+            print(f"Directory '{directory_name}' created successfully.")
         else:
-            print(f"Directory '{directory}' already exists.")
+            print(f"Directory '{directory_name}' already exists.")
+
+
 def calculate_macd(df, short_window=12, long_window=26, signal_window=9):
     """
     Calculate MACD indicator and determine True or False based on MACD and Signal line crossovers.
@@ -55,6 +63,8 @@ def calculate_macd(df, short_window=12, long_window=26, signal_window=9):
     crossover = (macd_line > signal_line) & (macd_line.shift(1) <= signal_line.shift(1))
     # Return True if crossover occurred, False otherwise
     return crossover[-1]
+
+
 def draw_chart(filtered_df, stock, buy_dates, buy_prices, EMA_PERIOD):
     # Calculate EMA
     ema_values = filtered_df['Close'].ewm(span=EMA_PERIOD, adjust=False).mean()
@@ -72,13 +82,38 @@ def draw_chart(filtered_df, stock, buy_dates, buy_prices, EMA_PERIOD):
     # Print stock name on the chart
     plt.text(filtered_df['Date'].iloc[0], filtered_df['Close'].min(), f'Stock: {stock}', fontsize=12, color='green')
     # Save the plot in the subdirectory
-    plt.savefig("Charts/" + f'{stock}_plot.png')
+    plt.savefig(f'{symbols_type}_Charts/' + f'{stock}_plot.png')
     # plt.show()
 
-def start_calc():
 
+def volume_spike(filtered_df, i):
+    volume_avg = filtered_df['Volume'].iloc[i - VOLUME_SPIKE_WINDOW:i].mean()
+    if volume_avg * 1.5 < filtered_df['Volume'].iloc[i]:
+        return True
+    else:
+        return False
+
+def close_green(filtered_df):
+    filtered_df['Close_Green'] = filtered_df['Close'] > filtered_df['Open']
+
+def low_less_than_n_low(filtered_df):
+    # Calculate the least open of the past 7 days excluding today
+    filtered_df['Past_7_Days_Min_Open'] = filtered_df['Open'].shift(1).rolling(window=8, min_periods=1).apply(
+        lambda x: min(x), raw=True)
+
+    # Compare today's open with the least open of the past 7 days
+    today_open_less_than_past_7_days_min = filtered_df['Open'].iloc[-1] < filtered_df['Past_7_Days_Min_Open'].iloc[-1]
+
+    # Print the result
+    print(today_open_less_than_past_7_days_min)
+    return today_open_less_than_past_7_days_min
+
+    # The column 'Current_Low_Less_8_Days_Low' will contain 'True' where the current low is less than the past 8 days low, otherwise 'False'
+
+
+def start_calc():
     # Read stocks from EMA_Swing.txt file
-    with open('../symbols/'+symbols_file, 'r') as file:
+    with open('../symbols/' + symbols_file, 'r') as file:
         stocks = file.read().splitlines()
 
     # Initialize lists to store summarized information
@@ -111,14 +146,14 @@ def start_calc():
         # Find buy points
         for i in range(EMA_PERIOD, len(filtered_df)):
             if price_ema.iloc[i] > filtered_df['Close'].iloc[i]:
-                # Check for volume spike
-                volume_avg = filtered_df['Volume'].iloc[i - VOLUME_SPIKE_WINDOW:i].mean()
-                if volume_avg * 1.5 < filtered_df['Volume'].iloc[i]:
+                # if low_less_than_n_low(filtered_df):#volume_spike(filtered_df, i):
+                close_green(filtered_df)
+                if filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i]: #volume_spike(filtered_df, i):
                     buy_date = filtered_df['Date'].iloc[i]
 
                     # Check if entry already exists for this month-year combination
                     month_year = buy_date.strftime('%m-%Y')
-                    master_csv_path = f'master.csv'
+                    master_csv_path = f'{symbols_type}_Master/master.csv'
                     if os.path.exists(master_csv_path):
                         master_df = pd.read_csv(master_csv_path, index_col=0)
                     else:
@@ -150,7 +185,7 @@ def start_calc():
             cumulative_percentage_return = 0
 
         # Append summarized data to the list
-        #summary_data.append([stock, total_invested_amount, current_value, cumulative_percentage_return])
+        # summary_data.append([stock, total_invested_amount, current_value, cumulative_percentage_return])
         summary_data.append(
             [stock, round(total_invested_amount, 2), round(current_value, 2), round(cumulative_percentage_return, 2)])
 
@@ -158,7 +193,7 @@ def start_calc():
         buy_df = pd.DataFrame({'Buy Date': buy_dates, 'Buy Price': buy_prices, 'Buy Qty': buy_qty})
 
         # Save buy DataFrame to CSV
-        buy_df.to_csv(f'Reports/{stock}_buy_dates_prices.csv', index=False)
+        buy_df.to_csv(f'{symbols_type}_Reports/{stock}_buy_dates_prices.csv', index=False)
         # Assuming you have this function defined
         draw_chart(filtered_df, stock, buy_dates, buy_prices, EMA_PERIOD)
 
@@ -171,7 +206,7 @@ def start_calc():
         ['Invested Amount', 'Current Value of Today', 'Cumulative Percentage']].round(2)
 
     # Define the file path for the summary CSV
-    summary_csv_path = "summary.csv"
+    summary_csv_path = f'{symbols_type}_Summary/summary.csv'
 
     # Write the summary data to the CSV file
     summary_df.to_csv(summary_csv_path, index=False)
@@ -195,22 +230,34 @@ def start_calc():
     with open(summary_csv_path, mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow([])  # Add an empty row for separation
+        writer.writerow(['AMOUNT_TO_INVEST', round(AMOUNT_TO_INVEST, 2)])
         writer.writerow(['Total Invested Amount', round(total_invested_amount, 2)])
         writer.writerow(['Total Current Value as of Today', round(total_current_value, 2)])
         writer.writerow(['Total Cumulative Percentage Return', f'{total_cumulative_percentage:.2f}%'])
+        writer.writerow(['Start_Date', f'{str(from_date):}'])
+        writer.writerow(['End_Date', f'{str(to_date):}'])
+
 
 # You need to define the get_df_from_yf() and draw_chart() functions.
 ##################
 
-symbols_file = 'nifty_50.txt'
-#symbols_file = 'custom.txt'
+# symbols_file = 'nifty_50.txt'
+#symbols_file = 'next_50.txt'
+# symbols_file = 'nifty_future.txt'
+# symbols_file = 'nifty_500.txt'
+# symbols_file = 'equity_cash_greater_100.txt'
+# symbols_file = "less_than_bookval_3x.txt"
+# symbols_file = 'custom.txt'
+symbols_file = 'large_cap.txt'
+# Extracting 'next_50' from symbols_file
+symbols_type = symbols_file.split('.')[0]
 # Define constants
 EMA_PERIOD = 200
 VOLUME_SPIKE_WINDOW = 20
-AMOUNT_TO_INVEST = 20000
-from_date = '2022-01-01'
+AMOUNT_TO_INVEST = 5000
+from_date = '2018-01-01'
 to_date = '2024-12-31'
 ##############
-create_directory()
+create_directory(symbols_type)
 create_master_sheet(from_date, to_date)
 start_calc()

@@ -28,3 +28,14 @@ Total_invested_Amount, Total_Cumulative_percentage
 Whenever there is a buy just put a entry as "BUY" on respective cell, so the logic behind is to avoid the duplicate entry on same month, if already bought then we are nto going to buy the same stock on same month, we will wait for next mont and see for the confition match
 code:
 ##############
+
+/usr/local/bin/python3.11 /Users/aloysiuspious/Personal/Algo/BackTest/Multiple_Indicators/Volume_Shock/Original.py 
+[*********************100%%**********************]  1 of 1 completed
+2023-01-06
+2023-01-10
+2023-02-28
+2023-03-14
+2023-03-17
+2023-04-13
+2023-04-17
+2023-06-16
