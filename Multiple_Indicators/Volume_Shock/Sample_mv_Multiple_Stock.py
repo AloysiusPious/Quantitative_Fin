@@ -112,7 +112,7 @@ def low_less_than_n_low(filtered_df):
 def start_calc():
     # Read stocks from EMA_Swing.txt file
     with open('../symbols/' + symbols_file, 'r') as file:
-        stocks = [line.strip() for line in file if not line.startswith('#')]
+        stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]
 
     # Initialize lists to store summarized information
     summary_data = []
@@ -146,9 +146,10 @@ def start_calc():
             if price_ema.iloc[i] > filtered_df['Close'].iloc[i]:
                 # if low_less_than_n_low(filtered_df):#volume_spike(filtered_df, i):
                 current_candle_green = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i]
+                prev_candle_open_below_ema = filtered_df['Close'].iloc[i - 1] < price_ema.iloc[i - 1]
                 two_candle_red = filtered_df['Close'].iloc[i] < filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
                 one_red_one_green_candle = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
-                if one_red_one_green_candle: #volume_spike(filtered_df, i):
+                if two_candle_red and prev_candle_open_below_ema: #volume_spike(filtered_df, i):
                     buy_date = filtered_df['Date'].iloc[i]
 
                     # Check if entry already exists for this month-year combination
@@ -179,7 +180,7 @@ def start_calc():
                     current_value += round(num_stocks_to_buy * filtered_df['Close'].iloc[-1], 2)
 
         # Calculate cumulative percentage return
-        if total_invested_amount != 0:
+        if total_invested_amount > 0:
             cumulative_percentage_return = ((current_value - total_invested_amount) / total_invested_amount) * 100
         else:
             cumulative_percentage_return = 0
@@ -219,7 +220,10 @@ def start_calc():
     # Calculate total invested amount and total cumulative percentage
     total_invested_amount = sum(row[1] for row in summary_data)
     total_current_value = sum(row[2] for row in summary_data)
-    total_cumulative_percentage = ((total_current_value - total_invested_amount) / total_invested_amount) * 100
+    if total_invested_amount > 0:
+        total_cumulative_percentage = ((total_current_value - total_invested_amount) / total_invested_amount) * 100
+    else:
+        total_cumulative_percentage = 0
 
     # Print total aggregated information
     print('Total Invested Amount:', round(total_invested_amount, 2))
