@@ -5,7 +5,7 @@ import csv
 import os
 import sys
 
-sys.path.append('/Users/aloysiuspious/Personal/Algo/BackTest/my_lib')
+sys.path.append('../../my_lib')
 from yfin import *
 
 
@@ -93,8 +93,6 @@ def volume_spike(filtered_df, i):
     else:
         return False
 
-def close_green(filtered_df):
-    filtered_df['Close_Green'] = filtered_df['Close'] > filtered_df['Open']
 
 def low_less_than_n_low(filtered_df):
     # Calculate the least open of the past 7 days excluding today
@@ -114,7 +112,7 @@ def low_less_than_n_low(filtered_df):
 def start_calc():
     # Read stocks from EMA_Swing.txt file
     with open('../symbols/' + symbols_file, 'r') as file:
-        stocks = file.read().splitlines()
+        stocks = [line.strip() for line in file if not line.startswith('#')]
 
     # Initialize lists to store summarized information
     summary_data = []
@@ -147,8 +145,10 @@ def start_calc():
         for i in range(EMA_PERIOD, len(filtered_df)):
             if price_ema.iloc[i] > filtered_df['Close'].iloc[i]:
                 # if low_less_than_n_low(filtered_df):#volume_spike(filtered_df, i):
-                close_green(filtered_df)
-                if filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i]: #volume_spike(filtered_df, i):
+                current_candle_green = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i]
+                two_candle_red = filtered_df['Close'].iloc[i] < filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
+                one_red_one_green_candle = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
+                if one_red_one_green_candle: #volume_spike(filtered_df, i):
                     buy_date = filtered_df['Date'].iloc[i]
 
                     # Check if entry already exists for this month-year combination
@@ -247,8 +247,8 @@ def start_calc():
 # symbols_file = 'nifty_500.txt'
 # symbols_file = 'equity_cash_greater_100.txt'
 # symbols_file = "less_than_bookval_3x.txt"
-# symbols_file = 'custom.txt'
-symbols_file = 'large_cap.txt'
+symbols_file = 'custom.txt'
+#symbols_file = 'large_cap.txt'
 # Extracting 'next_50' from symbols_file
 symbols_type = symbols_file.split('.')[0]
 # Define constants
