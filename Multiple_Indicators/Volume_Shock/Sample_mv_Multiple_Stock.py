@@ -261,7 +261,7 @@ symbols_file = 'nifty_50.txt'
 EMA_PERIOD = 200
 VOLUME_SPIKE_WINDOW = 20
 AMOUNT_TO_INVEST = 5000
-from_date = '2014-01-01'
+from_date = '2009-01-01'
 to_date = '2015-12-31'
 ##############
 symbols_type = symbols_file.split('.')[0]
