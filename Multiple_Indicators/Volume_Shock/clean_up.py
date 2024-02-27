@@ -16,5 +16,5 @@ if __name__ == "__main__":
 
     # Iterate over each directory and remove it if it exists
     for directory in directories_to_remove:
-        for dir_path in glob.glob(f'*{directory}'):
+        for dir_path in glob.glob(f'*{directory}*'):
             remove_directory(dir_path)
