@@ -5,7 +5,7 @@ import csv
 import os
 import sys
 
-sys.path.append('/Users/aloysiuspious/Personal/Algo/BackTest/my_lib')
+sys.path.append('../../my_lib')
 from yfin import *
 
 
@@ -29,11 +29,11 @@ def create_master_sheet(from_date, to_date):
     master_df = pd.DataFrame(data)
 
     # Save the master DataFrame to a CSV file
-    master_df.to_csv(f'{symbols_type}_Master/master.csv', index=False)
+    master_df.to_csv(f'{Master_Dir}/master.csv', index=False)
 
 
 def create_directory(symbols_type):
-    directories_to_create = ["Reports", "Charts", "Summary", "Master"]
+    directories_to_create = [f'Reports_{from_date}_to_{to_date}', f'Charts_{from_date}_to_{to_date}', f'Summary_{from_date}_to_{to_date}', f'Master_{from_date}_to_{to_date}']
     # Iterate over each directory and create it if it does not exist
     for directory in directories_to_create:
         directory_name = symbols_type + "_" + directory
@@ -66,24 +66,25 @@ def calculate_macd(df, short_window=12, long_window=26, signal_window=9):
 
 
 def draw_chart(filtered_df, stock, buy_dates, buy_prices, EMA_PERIOD):
-    # Calculate EMA
-    ema_values = filtered_df['Close'].ewm(span=EMA_PERIOD, adjust=False).mean()
+   if not filtered_df.empty:
+        # Calculate EMA
+        ema_values = filtered_df['Close'].ewm(span=EMA_PERIOD, adjust=False).mean()
 
-    # Plotting
-    plt.figure(figsize=(12, 6))
-    plt.plot(filtered_df['Date'], filtered_df['Close'], label='Close Price', color='blue')
-    plt.plot(filtered_df['Date'], ema_values, label=f'EMA ({EMA_PERIOD} periods)', color='orange')  # Plot EMA line
-    plt.scatter(buy_dates, buy_prices, color='red', marker='o', label='Buy Area')
-    plt.title(f'Stock Price Movement of [ {stock} ] with Buy Areas and EMA ({from_date} to {to_date})')
-    plt.xlabel('Date')
-    plt.ylabel('Price')
-    plt.legend()
-    plt.grid(True)
-    # Print stock name on the chart
-    plt.text(filtered_df['Date'].iloc[0], filtered_df['Close'].min(), f'Stock: {stock}', fontsize=12, color='green')
-    # Save the plot in the subdirectory
-    plt.savefig(f'{symbols_type}_Charts/' + f'{stock}_plot.png')
-    # plt.show()
+        # Plotting
+        plt.figure(figsize=(12, 6))
+        plt.plot(filtered_df['Date'], filtered_df['Close'], label='Close Price', color='blue')
+        plt.plot(filtered_df['Date'], ema_values, label=f'EMA ({EMA_PERIOD} periods)', color='orange')  # Plot EMA line
+        plt.scatter(buy_dates, buy_prices, color='red', marker='o', label='Buy Area')
+        plt.title(f'Stock Price Movement of [ {stock} ] with Buy Areas and EMA ({from_date} to {to_date})')
+        plt.xlabel('Date')
+        plt.ylabel('Price')
+        plt.legend()
+        plt.grid(True)
+        # Print stock name on the chart
+        plt.text(filtered_df['Date'].iloc[0], filtered_df['Close'].min(), f'Stock: {stock}', fontsize=12, color='green')
+        # Save the plot in the subdirectory
+        plt.savefig(f'{Charts_Dir}/' + f'{stock}_plot.png')
+        # plt.show()
 
 
 def volume_spike(filtered_df, i):
@@ -93,8 +94,6 @@ def volume_spike(filtered_df, i):
     else:
         return False
 
-def close_green(filtered_df):
-    filtered_df['Close_Green'] = filtered_df['Close'] > filtered_df['Open']
 
 def low_less_than_n_low(filtered_df):
     # Calculate the least open of the past 7 days excluding today
@@ -114,7 +113,7 @@ def low_less_than_n_low(filtered_df):
 def start_calc():
     # Read stocks from EMA_Swing.txt file
     with open('../symbols/' + symbols_file, 'r') as file:
-        stocks = file.read().splitlines()
+        stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]
 
     # Initialize lists to store summarized information
     summary_data = []
@@ -124,7 +123,7 @@ def start_calc():
         dataframe = get_df_from_yf(stock, from_date, to_date)
 
         # Check if the index contains date information
-        if isinstance(dataframe.index, pd.DatetimeIndex):
+        if dataframe is not None and not dataframe.empty and isinstance(dataframe.index, pd.DatetimeIndex):
             # Convert the index to datetime
             dataframe.index = pd.to_datetime(dataframe.index)
 
@@ -147,13 +146,16 @@ def start_calc():
         for i in range(EMA_PERIOD, len(filtered_df)):
             if price_ema.iloc[i] > filtered_df['Close'].iloc[i]:
                 # if low_less_than_n_low(filtered_df):#volume_spike(filtered_df, i):
-                close_green(filtered_df)
-                if filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i]: #volume_spike(filtered_df, i):
+                current_candle_green = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i]
+                prev_candle_open_below_ema = filtered_df['Close'].iloc[i - 1] < price_ema.iloc[i - 1]
+                two_candle_red = filtered_df['Close'].iloc[i] < filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
+                one_red_one_green_candle = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
+                if two_candle_red and prev_candle_open_below_ema: #volume_spike(filtered_df, i):
                     buy_date = filtered_df['Date'].iloc[i]
 
                     # Check if entry already exists for this month-year combination
                     month_year = buy_date.strftime('%m-%Y')
-                    master_csv_path = f'{symbols_type}_Master/master.csv'
+                    master_csv_path = f'{Master_Dir}/master.csv'
                     if os.path.exists(master_csv_path):
                         master_df = pd.read_csv(master_csv_path, index_col=0)
                     else:
@@ -179,7 +181,7 @@ def start_calc():
                     current_value += round(num_stocks_to_buy * filtered_df['Close'].iloc[-1], 2)
 
         # Calculate cumulative percentage return
-        if total_invested_amount != 0:
+        if total_invested_amount > 0:
             cumulative_percentage_return = ((current_value - total_invested_amount) / total_invested_amount) * 100
         else:
             cumulative_percentage_return = 0
@@ -193,7 +195,7 @@ def start_calc():
         buy_df = pd.DataFrame({'Buy Date': buy_dates, 'Buy Price': buy_prices, 'Buy Qty': buy_qty})
 
         # Save buy DataFrame to CSV
-        buy_df.to_csv(f'{symbols_type}_Reports/{stock}_buy_dates_prices.csv', index=False)
+        buy_df.to_csv(f'{Reports_Dir}/{stock}_buy_dates_prices.csv', index=False)
         # Assuming you have this function defined
         draw_chart(filtered_df, stock, buy_dates, buy_prices, EMA_PERIOD)
 
@@ -206,7 +208,7 @@ def start_calc():
         ['Invested Amount', 'Current Value of Today', 'Cumulative Percentage']].round(2)
 
     # Define the file path for the summary CSV
-    summary_csv_path = f'{symbols_type}_Summary/summary.csv'
+    summary_csv_path = f'{Summary_Dir}/summary.csv'
 
     # Write the summary data to the CSV file
     summary_df.to_csv(summary_csv_path, index=False)
@@ -219,7 +221,10 @@ def start_calc():
     # Calculate total invested amount and total cumulative percentage
     total_invested_amount = sum(row[1] for row in summary_data)
     total_current_value = sum(row[2] for row in summary_data)
-    total_cumulative_percentage = ((total_current_value - total_invested_amount) / total_invested_amount) * 100
+    if total_invested_amount > 0:
+        total_cumulative_percentage = ((total_current_value - total_invested_amount) / total_invested_amount) * 100
+    else:
+        total_cumulative_percentage = 0
 
     # Print total aggregated information
     print('Total Invested Amount:', round(total_invested_amount, 2))
@@ -247,16 +252,23 @@ def start_calc():
 # symbols_file = 'nifty_500.txt'
 # symbols_file = 'equity_cash_greater_100.txt'
 # symbols_file = "less_than_bookval_3x.txt"
-# symbols_file = 'custom.txt'
+#symbols_file = 'custom.txt'
 symbols_file = 'large_cap.txt'
 # Extracting 'next_50' from symbols_file
-symbols_type = symbols_file.split('.')[0]
+
+
 # Define constants
 EMA_PERIOD = 200
 VOLUME_SPIKE_WINDOW = 20
 AMOUNT_TO_INVEST = 5000
-from_date = '2018-01-01'
-to_date = '2024-12-31'
+from_date = '2009-01-01'
+to_date = '2015-12-31'
+##############
+symbols_type = symbols_file.split('.')[0]
+Reports_Dir = f'{symbols_type}_Reports_{from_date}_to_{to_date}'
+Charts_Dir = f'{symbols_type}_Charts_{from_date}_to_{to_date}'
+Summary_Dir = f'{symbols_type}_Summary_{from_date}_to_{to_date}'
+Master_Dir = f'{symbols_type}_Master_{from_date}_to_{to_date}'
 ##############
 create_directory(symbols_type)
 create_master_sheet(from_date, to_date)
