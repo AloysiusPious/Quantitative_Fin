@@ -4,9 +4,11 @@ import matplotlib.pyplot as plt
 import csv
 import os
 import sys
+from datetime import datetime, timedelta
 
 sys.path.append('../../my_lib')
 from yfin import *
+from zerdoha_data import *
 
 
 def create_master_sheet(from_date, to_date):
@@ -37,13 +39,13 @@ def create_directory(symbols_type):
     # Iterate over each directory and create it if it does not exist
     for directory in directories_to_create:
         directory_name = symbols_type + "_" + directory
-        print(directory_name)
+        #print(directory_name)
         """Create directory if it does not exist"""
         if not os.path.exists(directory_name):
             os.makedirs(directory_name)
-            print(f"Directory '{directory_name}' created successfully.")
-        else:
-            print(f"Directory '{directory_name}' already exists.")
+            #print(f"Directory '{directory_name}' created successfully.")
+        #else:
+         #   print(f"Directory '{directory_name}' already exists.")
 
 
 def calculate_macd(df, short_window=12, long_window=26, signal_window=9):
@@ -120,15 +122,18 @@ def start_calc():
 
     for stock in stocks:
         # Retrieve data for the stock from Yahoo Finance
-        dataframe = get_df_from_yf(stock, from_date, to_date)
-
+        dataframe = get_df_from_yf(stock, from_date, to_date) if data_source == "yahoo" else get_data_from_zerodha(stock, from_date, to_date, time_frame)
+        #print(dataframe.info())
+        #print(dataframe.index.dtype)
         # Check if the index contains date information
         if dataframe is not None and not dataframe.empty and isinstance(dataframe.index, pd.DatetimeIndex):
             # Convert the index to datetime
             dataframe.index = pd.to_datetime(dataframe.index)
-
         # If you still need a 'Date' column, you can create it from the index
+        #print(dataframe)
         dataframe['Date'] = dataframe.index
+        # Assuming 'Date' is a column in your DataFrame
+        #dataframe.set_index('Date', inplace=True)
 
         # Filter DataFrame based on FROM and TO dates
         filtered_df = dataframe[(dataframe['Date'] >= from_date) & (dataframe['Date'] <= to_date)]
@@ -144,41 +149,55 @@ def start_calc():
 
         # Find buy points
         for i in range(EMA_PERIOD, len(filtered_df)):
-            if price_ema.iloc[i] > filtered_df['Close'].iloc[i]:
-                # if low_less_than_n_low(filtered_df):#volume_spike(filtered_df, i):
-                current_candle_green = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i]
-                prev_candle_open_below_ema = filtered_df['Close'].iloc[i - 1] < price_ema.iloc[i - 1]
-                two_candle_red = filtered_df['Close'].iloc[i] < filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
-                one_red_one_green_candle = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
-                if two_candle_red and prev_candle_open_below_ema: #volume_spike(filtered_df, i):
-                    buy_date = filtered_df['Date'].iloc[i]
+            #if price_ema.iloc[i] > filtered_df['Close'].iloc[i]:
+            current_cand_less_than_200ema = price_ema.iloc[i] > filtered_df['Close'].iloc[i]
+            prev_1_cand_less_than_200ema = price_ema.iloc[i-1] > filtered_df['Close'].iloc[i - 1]
+            prev_2_cand_less_than_200ema = price_ema.iloc[i - 2] > filtered_df['Close'].iloc[i - 2]
+            current_candle_green = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i]
+            prev_candle_open_below_ema = filtered_df['Close'].iloc[i - 1] < price_ema.iloc[i - 1]
+            two_candle_red = filtered_df['Close'].iloc[i] < filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
+            cand_curr_green_prev_red = filtered_df['Close'].iloc[i] > filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]
+            cand_curr_red_prev_1_green = filtered_df['Close'].iloc[i] < filtered_df['Open'].iloc[i] and filtered_df['Close'].iloc[i - 1] > filtered_df['Open'].iloc[i - 1]
+            prev_2_red_prev_3_red = filtered_df['Close'].iloc[i - 2] < filtered_df['Open'].iloc[i - 2] and filtered_df['Close'].iloc[i - 3] < filtered_df['Open'].iloc[i - 3]
+            prev_three_black_crow = filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1]\
+                                                  and filtered_df['Close'].iloc[i - 2] < filtered_df['Open'].iloc[i - 2] \
+                                                  and filtered_df['Close'].iloc[i - 3] < filtered_df['Open'].iloc[i - 3]
+            current_three_black_crow = filtered_df['Close'].iloc[i] < filtered_df['Open'].iloc[i]\
+                                                  and filtered_df['Close'].iloc[i - 1] < filtered_df['Open'].iloc[i - 1] \
+                                                  and filtered_df['Close'].iloc[i - 2] < filtered_df['Open'].iloc[i - 2]
+            vol_spike = volume_spike(filtered_df, i)
+            sce_1 = current_candle_green and prev_three_black_crow and current_cand_less_than_200ema and prev_1_cand_less_than_200ema and prev_2_cand_less_than_200ema
+            sce_2 = current_three_black_crow and current_cand_less_than_200ema and prev_1_cand_less_than_200ema and prev_2_cand_less_than_200ema
+            if sce_2:
+                buy_date = filtered_df['Date'].iloc[i]
+                # Check if entry already exists for this month-year combination
+                month_year = buy_date.strftime('%m-%Y')
+                master_csv_path = f'{Master_Dir}/master.csv'
+                if os.path.exists(master_csv_path):
+                    master_df = pd.read_csv(master_csv_path, index_col=0)
+                else:
+                    master_df = pd.DataFrame()
 
-                    # Check if entry already exists for this month-year combination
-                    month_year = buy_date.strftime('%m-%Y')
-                    master_csv_path = f'{Master_Dir}/master.csv'
-                    if os.path.exists(master_csv_path):
-                        master_df = pd.read_csv(master_csv_path, index_col=0)
-                    else:
-                        master_df = pd.DataFrame()
+                if stock not in master_df.index:
+                    master_df.loc[stock] = ""
 
-                    if stock not in master_df.index:
-                        master_df.loc[stock] = ""
+                # Check if the stock has already been bought in this month
+                if month_year in master_df.columns and master_df.at[stock, month_year] == "BUY":
+                #if month_year in master_df.columns and master_df.at[stock, month_year] == "BUY":
+                    continue  # Skip buying for this month if already bought
+                #else:
+                # Update master CSV with "BUY" entry
+                master_df[month_year] = master_df[month_year].astype(str)
+                master_df.at[stock, month_year] = "BUY"
+                master_df.to_csv(master_csv_path)
 
-                    # Check if the stock has already been bought in this month
-                    if month_year in master_df.columns and master_df.at[stock, month_year] == "BUY":
-                        continue  # Skip buying for this month if already bought
-
-                    # Update master CSV with "BUY" entry
-                    master_df.at[stock, month_year] = "BUY"
-                    master_df.to_csv(master_csv_path)
-
-                    # Append buy information to lists
-                    buy_dates.append(filtered_df['Date'].iloc[i])  # Append datetime object for buy date
-                    buy_prices.append(round(filtered_df['Close'].iloc[i], 2))  # Append buy price
-                    num_stocks_to_buy = int(AMOUNT_TO_INVEST // filtered_df['Close'].iloc[i])
-                    buy_qty.append(round(num_stocks_to_buy, 2))  # Append buy quantity
-                    total_invested_amount += round(num_stocks_to_buy * filtered_df['Close'].iloc[i], 2)
-                    current_value += round(num_stocks_to_buy * filtered_df['Close'].iloc[-1], 2)
+                # Append buy information to lists
+                buy_dates.append(filtered_df['Date'].iloc[i])  # Append datetime object for buy date
+                buy_prices.append(round(filtered_df['Close'].iloc[i], 2))  # Append buy price
+                num_stocks_to_buy = int(AMOUNT_TO_INVEST // filtered_df['Close'].iloc[i])
+                buy_qty.append(round(num_stocks_to_buy, 2))  # Append buy quantity
+                total_invested_amount += round(num_stocks_to_buy * filtered_df['Close'].iloc[i], 2)
+                current_value += round(num_stocks_to_buy * filtered_df['Close'].iloc[-1], 2)
 
         # Calculate cumulative percentage return
         if total_invested_amount > 0:
@@ -246,14 +265,14 @@ def start_calc():
 # You need to define the get_df_from_yf() and draw_chart() functions.
 ##################
 
-# symbols_file = 'nifty_50.txt'
+symbols_file = 'nifty_50.txt'
 #symbols_file = 'next_50.txt'
-# symbols_file = 'nifty_future.txt'
+#symbols_file = 'nifty_future.txt'
 # symbols_file = 'nifty_500.txt'
 # symbols_file = 'equity_cash_greater_100.txt'
 # symbols_file = "less_than_bookval_3x.txt"
 #symbols_file = 'custom.txt'
-symbols_file = 'large_cap.txt'
+#symbols_file = 'large_cap.txt'
 # Extracting 'next_50' from symbols_file
 
 
@@ -261,8 +280,14 @@ symbols_file = 'large_cap.txt'
 EMA_PERIOD = 200
 VOLUME_SPIKE_WINDOW = 20
 AMOUNT_TO_INVEST = 5000
-from_date = '2009-01-01'
-to_date = '2015-12-31'
+from_date = '2018-01-01'
+to_date = '2024-12-31'
+time_frame = 'day'
+#############
+#data_source = "yahoo"
+data_source = "zerodha"
+
+print(f"********** retrieving  Data Source From {data_source} *************")
 ##############
 symbols_type = symbols_file.split('.')[0]
 Reports_Dir = f'{symbols_type}_Reports_{from_date}_to_{to_date}'
