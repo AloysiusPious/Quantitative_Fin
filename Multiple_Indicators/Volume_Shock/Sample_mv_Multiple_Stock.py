@@ -147,6 +147,7 @@ def start_calc():
         buy_prices = []  # List to store buy prices
         buy_qty = []
 
+
         # Find buy points
         for i in range(EMA_PERIOD, len(filtered_df)):
             #if price_ema.iloc[i] > filtered_df['Close'].iloc[i]:
