@@ -1,0 +1,6 @@
+pandas
+tabulate
+matplotlib
+csv
+os
+sys
