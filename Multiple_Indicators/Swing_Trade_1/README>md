@@ -1,0 +1,14 @@
+Create a python code for this,
+I want to backtest Stock 1 day data using python past 5 years
+download it from yahoo finanace
+My capital is 100000
+it shoud have target percentage which will be defined variable
+also Stop Loss Percentage even that Should be defined in vairiable
+Buying condition is Whenever inside green candle followed buy 3 Black crow below 200 EMA
+or
+Buying condition is  Piercing pattern followed buy 3 Black crow below 200 EMA
+should be allowed to trade 10 Stocks at a time, so capital per stock is 100000/10
+look for the next opportunity once exit the position of particular stocks
+print the invested amount, provide/loss, return percentage
+Capital can be compounded and divided by 10 always
+
