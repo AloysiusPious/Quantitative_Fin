@@ -1,5 +1,5 @@
-Create a python code for this,
-I want to backtest Stock 1 day data using python past 5 years
+
+backtest Stock 1 day data using python past 5 years
 download it from yahoo finanace
 My capital is 100000
 it shoud have target percentage which will be defined variable
