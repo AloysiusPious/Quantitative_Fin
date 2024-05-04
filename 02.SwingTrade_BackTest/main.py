@@ -1,7 +1,8 @@
 import pandas as pd
 import yfinance as yf
-import talib as ta
+#import talib as ta
 import os
+import matplotlib.pyplot as plt
 
 # Define function to fetch Yahoo Finance data
 def fetch_yahoo_finance_data(symbol, start_date, end_date):
@@ -19,12 +20,57 @@ def calculate_ema(data, ema_period=200):
     return data
 '''
 # Define function to check buying conditions and track trades
+def pd_rsi_below_n(filtered_df, i, window = 14, n = 30, ohlc = "Close"):
+    # Calculate RSI with a period of 14 days
+    delta = filtered_df[ohlc].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    # Check if RSI is less than n
+    rsi_below = rsi.iloc[i] < n
+    return rsi_below
+def pd_rsi_above_n(filtered_df, i, window = 14, n = 30, ohlc = "Close"):
+    # Calculate RSI with a period of 14 days
+    delta = filtered_df[ohlc].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    # Check if RSI is less than n
+    rsi_below = rsi.iloc[i] > n
+    return rsi_below
+def ta_rsi_above_n(filtered_df, i, n, ohlc = "Close"):
+    ################## RSI - Begin ################
+    # Calculate RSI with a period of 14 days
+    filtered_df['RSI'] = ta.RSI(filtered_df[ohlc])
+    # Check if RSI is less than 32
+    filtered_df[f'RSI_Less_{n}'] = filtered_df['RSI'].iloc[i] < n
+    return filtered_df[f'RSI_Less_{n}'].iloc[i]
+
+
+def pd_rsi_cross_n(filtered_df, i, window = 14, n = 30, ohlc = "Close"):
+    # Calculate RSI with a period of 14 days
+    delta = filtered_df[ohlc].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+
+    # Check if RSI crosses n
+    rsi_cross = (rsi.iloc[i - 2] < n) and (rsi.iloc[i] > n)
+    return rsi_cross
+
+
 def check_buy_conditions(data, capital_per_stock, target_percentage, stop_loss_percentage):
     trade = None
     trades = []
     invested_amount = 0
 
-    for i in range(4, len(data)):  # Start from the 4th day to have enough data for calculations
+    # Create a new column in the DataFrame to track buy signals
+    data['Buy Signal'] = 0
+
+    for i in range(350, len(data)):  # Start from the 4th day to have enough data for calculations
         if not trade:
             is_previous_red = (data.iloc[i - 1]['Close'] < data.iloc[i - 1]['Open'])
             is_previous_three_red = (data.iloc[i - 1]['Close'] < data.iloc[i - 1]['Open']) and (
@@ -33,35 +79,73 @@ def check_buy_conditions(data, capital_per_stock, target_percentage, stop_loss_p
             is_current_green = (data.iloc[i]['Close'] > data.iloc[i]['Open'])
             is_current_close_above_previous_open = (data.iloc[i]['Close'] > data.iloc[i - 1]['Open'])
             is_close_above_200EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_200']
+            is_close_above_300EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_300']
+            is_close_below_200EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_200']
             is_close_above_50EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_50']
             is_close_below_50EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_50']
+            is_close_above_20EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_20']
             is_close_below_20EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_20']
             is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
             is_current_open_less_than_previous_close = data.iloc[i]['Open'] < data.iloc[i - 1]['Close']
-            #print(data)
-            if is_previous_red and is_current_green and is_current_close_above_previous_open and \
-                     is_50EMA_above_200EMA and is_close_below_50EMA and is_close_above_200EMA and is_current_open_less_than_previous_close:
+
+            ################### RSI ############
+            rsi_above_clo = pd_rsi_above_n(data, i, 55, 50, "Close")
+            rsi_cross_clo = pd_rsi_cross_n(data, i, 14, 30, "Close")
+            rsi_below_clo = pd_rsi_below_n(data, i, 14, 30, "Close")
+            rsi_point = 27
+            rsi_bullish_cand_1 = pd_rsi_below_n(data, i, 13, rsi_point, "Low") and pd_rsi_above_n(data, i, 13, rsi_point, "Open") and pd_rsi_above_n(data, i, 13, rsi_point, "Close")
+            rsi_bullish_cand_2 = pd_rsi_below_n(data, i - 1, 13, rsi_point, "Low") and pd_rsi_above_n(data, i - 1, 13, rsi_point, "Open") and pd_rsi_above_n(data, i - 1, 13, rsi_point, "Close")
+            rsi_bullish_cand_3 = pd_rsi_below_n(data, i - 2, 13, rsi_point, "Low") and pd_rsi_above_n(data, i - 2, 13, rsi_point, "Open") and pd_rsi_above_n(data, i - 2, 13, rsi_point, "Close")
+            rsi_bullish_cand_4 = pd_rsi_below_n(data, i - 3, 13, rsi_point, "Low") and pd_rsi_above_n(data, i - 3, 13, rsi_point, "Open") and pd_rsi_above_n(data, i - 3, 13, rsi_point, "Close")
+            rsi_bullish_cand_5 = pd_rsi_below_n(data, i - 4, 13, rsi_point, "Low") and pd_rsi_above_n(data, i - 4, 13, rsi_point, "Open") and pd_rsi_above_n(data, i - 4, 13, rsi_point, "Close")
+            rsi_bullish_pattern = rsi_bullish_cand_1 and rsi_bullish_cand_2 and rsi_bullish_cand_3 and rsi_bullish_cand_4 and rsi_bullish_cand_5
+            ################
+            high_break = data.iloc[i]['High'] > data.iloc[i - 1]['High'] and data.iloc[i]['High'] > \
+                         data.iloc[i - 2]['High']
+            ################
+            condition_1 = pd_rsi_above_n(data, i, 14, 20, "Close") and pd_rsi_below_n(data, i - 1, 14, 20, "Close") and pd_rsi_above_n(data, i - 2, 14, 20, "Close") and is_close_above_300EMA
+            condition_2 = rsi_bullish_cand_2 and is_close_above_50EMA
+            condition_3 = is_close_above_20EMA and pd_rsi_cross_n(data, i, 14, 50, "Close")
+            if condition_1:
+                #if high_break:
                 # Buy condition met
                 buy_date = data.index[i].date()
-                bought_price = round(data.iloc[i]['Close'], 2)  # Bought at the closing price
+                bought_price = round(data.iloc[i]['High'], 2)  # Bought at the closing price
                 quantity_bought = round(capital_per_stock / bought_price, 2)
                 invested_amount += capital_per_stock
+                #stop_loss = round((data.iloc[i - 1]['Low']), 2) # Set the Stop Loss as Previous candle Low
+                #target = round(data.iloc[i + 9]['Close'], 2)  # Set the target as the 10th day close
                 stop_loss = round(bought_price * (1 - stop_loss_percentage / 100), 2)
                 target = round(bought_price * (1 + target_percentage / 100), 2)
                 trade = {'Buy Date': buy_date, 'Bought Price': bought_price, 'Quantity Bought': quantity_bought,
                          'Invested Amount': capital_per_stock, 'Stop Loss': stop_loss, 'Target': target,
                          'Exited Date': None, 'Profit Amount': None}
-        elif trade and ((trade['Stop Loss'] >= data.iloc[i]['Low']) or (trade['Target'] <= data.iloc[i]['High'])):
-            # Sell condition met
-            sell_date = data.index[i].date()
-            profit_amount = round((data.iloc[i]['Close'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
-            trade['Exited Date'] = sell_date  # Update Exited Date to target or stop loss hit date
-            trade['Profit Amount'] = profit_amount
-            invested_amount -= trade['Invested Amount']
-            trades.append(trade)
-            trade = None  # Reset trade
 
-    return trades
+                # Mark the buy signal in the DataFrame
+                data.loc[data.index[i], 'Buy Signal'] = data.iloc[i]['Low'].astype(float)
+
+                if trade and ((trade['Stop Loss'] >= data.iloc[i]['Low']) or (trade['Target'] <= data.iloc[i]['High'])):
+                    # Sell condition met
+                    sell_date = data.index[i].date()
+                    profit_amount = round((data.iloc[i]['Close'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
+                    trade['Exited Date'] = sell_date  # Update Exited Date to target or stop loss hit date
+                    trade['Profit Amount'] = profit_amount
+                    invested_amount -= trade['Invested Amount']
+                    trades.append(trade)
+                    trade = None  # Reset trade
+
+                    # Plotting the chart with buy signals
+                    plt.figure(figsize=(12, 6))
+                    plt.plot(data.index, data['Close'], label='Close Price')
+                    plt.scatter(data.index, data['Buy Signal'], color='red', marker='^', label='Buy Signal')
+                    plt.xlabel('Date')
+                    plt.ylabel('Price')
+                    plt.title('Chart with Buy Signals')
+                    plt.legend()
+                    plt.savefig(f'{Charts_Dir}/' + f'{stock}_plot.png')
+                    #plt.show()
+
+                    return trades
 
 
 def create_directory(symbols_type):
@@ -145,6 +229,7 @@ def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_per
             return  # Skip this stock
 
         # Calculate EMA
+        data = calculate_ema(data, 300)
         data = calculate_ema(data, 200)
         data = calculate_ema(data, 50)
         data = calculate_ema(data, 20)
@@ -199,10 +284,10 @@ def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_per
 if __name__ == "__main__":
     # Define parameters
     symbols_file = 'custom.txt'
-    from_date = '2017-01-01'  # 5 years ago from now
-    to_date = '2022-01-01'  # Current date
-    capital = 100000
-    target_percentage = 10  # Example target percentage
+    from_date = '2015-01-01'  # 5 years ago from now
+    to_date = '2019-12-31'  # Current date
+    capital = 1000000
+    target_percentage = 15  # Example target percentage
     stop_loss_percentage = 5  # Example stop loss percentage
     ##############
     symbols_type = symbols_file.split('.')[0]
@@ -221,6 +306,7 @@ if __name__ == "__main__":
 
     for stock in stocks:
         # Call main function with parameters
+        print(f"Backtesting for Symbol : {stock}")
         main(stock+str(".NS"), from_date, to_date, capital, target_percentage, stop_loss_percentage)
     # Call function to create the Master.csv file
     create_master_file(Summary_Dir)
