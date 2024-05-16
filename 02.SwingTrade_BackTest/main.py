@@ -7,7 +7,43 @@ import numpy as np
 import configparser
 import shutil
 import glob
-def visualize(data):
+import matplotlib.pyplot as plt
+
+
+def visualize_capital_and_drawdown(capital_history, drawdown_history):
+    plt.figure(figsize=(12, 6))
+    # Plotting the capital history
+    plt.plot(capital_history, label='Capital', color='blue')
+    # Plotting the drawdown history
+    plt.plot(drawdown_history, label='Drawdown', color='red')
+    plt.xlabel('Time')
+    plt.ylabel('Amount')
+    plt.title(f'{stock} Capital and Drawdown Over Time')
+    plt.legend()
+    plt.savefig(f'{Charts_Dir}/capital_drawdown.png')
+    plt.close()
+def visualize(data, target_col, stop_loss_col, stock, Charts_Dir):
+    plt.figure(figsize=(12, 6))
+    # Plotting the close price
+    plt.plot(data.index, data['Close'], label='Close Price', color='black')
+    # Plotting the buy signals
+    if 'Buy Signal' in data.columns:
+        plt.scatter(data.index, data['Buy Signal'], color='green', marker='^', label='Buy Signal')
+    # Plotting the target levels
+    if target_col in data.columns:
+        plt.scatter(data.index, data[target_col], color='blue', marker='o', label='Target')
+    # Plotting the stop loss levels
+    if stop_loss_col in data.columns:
+        plt.scatter(data.index, data[stop_loss_col], color='red', marker='o', label='Stop Loss')
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.title(f'{stock} Chart with Buy Signals, Target, and Stop Loss')
+    plt.legend()
+
+    plt.savefig(f'{Charts_Dir}/{stock}_plot.png')
+    plt.close()
+
+def visualize_1(data, target, stop_loss):
     # Plotting the chart with buy signals
     plt.figure(figsize=(12, 6))
     plt.plot(data.index, data['Close'], label='Close Price')
@@ -118,6 +154,12 @@ def check_buy_conditions(data, capital_per_stock, target_percentage, stop_loss_p
     trade = None
     trades = []
     invested_amount = 0
+    ###
+    initial_capital = 10000000  # Example initial capital
+    capital = initial_capital
+    capital_history = [capital]
+    drawdown = 0
+    drawdown_history = [drawdown]
 
     for i in range(100, len(data)):  # Start from the 4th day to have enough data for calculations
         if not trade:
@@ -133,6 +175,7 @@ def check_buy_conditions(data, capital_per_stock, target_percentage, stop_loss_p
             is_close_below_50EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_50']
             is_close_below_20EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_20']
             is_close_above_20EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_20']
+            is_close_above_7EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_7']
 
             is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
             is_20EMA_below_50EMA = data.iloc[i]['EMA_20'] < data.iloc[i]['EMA_50']
@@ -142,7 +185,9 @@ def check_buy_conditions(data, capital_per_stock, target_percentage, stop_loss_p
             rsi_cross = pd_rsi_cross_n(data, i, 14,30)
             rsi_below = pd_rsi_below_n(data, i, 14,30)
             #print(data)
-            if volume_increase(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA and is_current_green:
+            sce_1 = volume_increase(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA and is_current_green
+            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA
+            if sce_2:
                 # Buy condition met
                 buy_date = data.index[i].date()
                 bought_price = round(data.iloc[i]['Close'], 2)  # Bought at the closing price
@@ -155,11 +200,18 @@ def check_buy_conditions(data, capital_per_stock, target_percentage, stop_loss_p
                          'Exited Date': None, 'Profit Amount': None}
                 # Mark the buy signal in the DataFrame
                 data.loc[data.index[i], 'Buy Signal'] = data.iloc[i]['Low'].astype(float)
-
+                data.loc[data.index[i], 'Target Level'] = target
+                data.loc[data.index[i], 'Stop Loss Level'] = stop_loss
+                # Mark the buy signal in the DataFrame
+                data.loc[data.index[i], 'Buy Signal'] = data.iloc[i]['Low'].astype(float)
                 if trade and ((trade['Stop Loss'] >= data.iloc[i]['Low']) or (trade['Target'] <= data.iloc[i]['High'])):
+                    if trade['Target'] <= data.iloc[i]['High']:
+                        # profit_amount = round((data.iloc[i]['Close'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
+                        profit_amount = round((target - trade['Bought Price']) * trade['Quantity Bought'], 2)
+                    elif trade['Stop Loss'] >= data.iloc[i]['Low']:
+                        profit_amount = round((stop_loss - trade['Bought Price']) * trade['Quantity Bought'], 2)
                     # Sell condition met
                     sell_date = data.index[i].date()
-                    profit_amount = round((data.iloc[i]['Close'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
                     trade['Exited Date'] = sell_date  # Update Exited Date to target or stop loss hit date
                     trade['Profit Amount'] = profit_amount
                     invested_amount -= trade['Invested Amount']
@@ -167,16 +219,31 @@ def check_buy_conditions(data, capital_per_stock, target_percentage, stop_loss_p
                     trade = None  # Reset trade
 
         elif trade and ((trade['Stop Loss'] >= data.iloc[i]['Low']) or (trade['Target'] <= data.iloc[i]['High'])):
+            if trade['Target'] <= data.iloc[i]['High']:
+                # profit_amount = round((data.iloc[i]['Close'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
+                profit_amount = round((target - trade['Bought Price']) * trade['Quantity Bought'], 2)
+            elif trade['Stop Loss'] >= data.iloc[i]['Low']:
+                profit_amount = round((stop_loss - trade['Bought Price']) * trade['Quantity Bought'], 2)
             # Sell condition met
             sell_date = data.index[i].date()
-            profit_amount = round((data.iloc[i]['Close'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
             trade['Exited Date'] = sell_date  # Update Exited Date to target or stop loss hit date
             trade['Profit Amount'] = profit_amount
             invested_amount -= trade['Invested Amount']
             trades.append(trade)
             trade = None  # Reset trade
+        # Update capital and drawdown history
+        if trade:
+            capital -= capital_per_stock
+        else:
+            capital += profit_amount if 'profit_amount' in locals() else 0
+
+        capital_history.append(capital)
+        max_capital = max(capital_history)
+        drawdown = (max_capital - capital) / max_capital
+        drawdown_history.append(drawdown)
     if create_chart:
-        visualize(data)
+        visualize(data, 'Target Level', 'Stop Loss Level', stock, Charts_Dir)
+        #visualize_capital_and_drawdown(capital_history, drawdown_history)
     return trades
 
 
@@ -260,6 +327,7 @@ def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_per
         data = calculate_ema(data, 200)
         data = calculate_ema(data, 50)
         data = calculate_ema(data, 20)
+        data = calculate_ema(data, 7)
 
         # Calculate capital per stock
         capital_per_stock = round(capital / 10, 2)  # Assuming you're allowed to trade 10 stocks at a time
