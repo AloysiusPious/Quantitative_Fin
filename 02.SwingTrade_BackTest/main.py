@@ -126,15 +126,6 @@ def remove_directory():
                 print(f"Directory '{dir_path}' removed successfully.")
             else:
                 print(f"Directory '{dir_path}' not found.")
-def citadel(data):
-    data['HL_avg'] = data['High'].rolling(window=25).mean() - data['Low'].rolling(window=25).mean()
-    data['IBS'] = (data['Close'] - data['Low']) / (data['High'] - data['Low'])
-    data['Band'] = data['High'].rolling(window=25).mean() - (data['HL_avg'] * 2.25)
-    # Trading strategy simulation
-    for i in range(25, len(data)):
-        if data['Close'][i] < data['Band'][i] and data['IBS'][i] < 0.6:
-            return True
-
 def volume_increase(data,i):
     # Calculate the 20-day moving average of the volume for the entire DataFrame
     data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
@@ -198,8 +189,6 @@ def ta_rsi_above_n(filtered_df, i, n):
     # Check if RSI is less than 32
     filtered_df[f'RSI_Less_{n}'] = filtered_df['RSI'].iloc[i] < n
     return filtered_df[f'RSI_Less_{n}'].iloc[i]
-
-
 def pd_rsi_cross_n(filtered_df, i, window = 14, n = 30):
     # Calculate RSI with a period of 14 days
     delta = filtered_df['Close'].diff()
@@ -273,9 +262,31 @@ def citadel(data):
     data['Band'] = data['High'].rolling(window=25).mean() - (data['HL_avg'] * 2.25)
     # Trading strategy simulation
     for i in range(25, len(data)):
-        if data['Close'][i] < data['Band'][i] and data['IBS'][i] < 0.6:
+        if data.iloc[i]['Close'] < data.iloc[i]['Band'] and data.iloc[i]['IBS'] < 0.6:
             return True
 
+
+# Replace the existing volume_increase function with the nr7_breakout function
+def nr7_breakout(data, i):
+    # Ensure there are enough data points to compare
+    if i < 6:
+        return False
+
+    # Check if the current day is an NR-7 day
+    current_range = data.iloc[i]['High'] - data.iloc[i]['Low']
+    past_7_ranges = [data.iloc[j]['High'] - data.iloc[j]['Low'] for j in range(i - 6, i + 1)]
+
+    if current_range != min(past_7_ranges):
+        return False
+
+    # Calculate the 20-day moving average of the volume for the entire DataFrame
+    data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
+
+    # Check if the specified day's volume is at least 50% higher than the 20-day average
+    if data.iloc[i]['Volume'] > (data.iloc[i]['20d_avg_volume'] * 1.50):
+        return True
+    else:
+        return False
 def volume_increase(data,i):
     # Calculate the 20-day moving average of the volume for the entire DataFrame
     data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
@@ -294,13 +305,20 @@ def round_to_nearest_five_cents(value):
     rounded_value = np.round(value / 0.05) * 0.05
     formatted_value = np.format_float_positional(rounded_value, precision=2, trim='-')
     return float(formatted_value)
+
 # Define function to fetch Yahoo Finance data
 def fetch_yahoo_finance_data(symbol, start_date, end_date):
+    # Convert from_date to a datetime object
+    from_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+    # Subtract one year
+    adjusted_from_date_obj = from_date_obj.replace(year=from_date_obj.year - 1)
+    # Convert the adjusted date back to a string
+    start_date = adjusted_from_date_obj.strftime('%Y-%m-%d')
     data = yf.download(symbol, start=start_date, end=end_date)
     col = ['Open', 'High', 'Low', 'Close', 'Adj Close']
     data = convert_col_digit(data, col)
     return data
-# Define function to fetch Yahoo Finance data
+
 # Define function to calculate EMA using pandas
 def calculate_ema(data, ema_period):
     data['EMA_' + str(ema_period)] = data['Close'].rolling(window=ema_period).mean()
@@ -385,10 +403,11 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             rsi_below = pd_rsi_below_n(data, i, 14,30)
             #print(data)
             sce_1 = volume_increase(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA and is_current_green
-            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA and is_current_green #*****
-            sce_3 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_below_200EMA and is_current_green
-            sce_4 = volume_increase(data, i) and is_close_below_7EMA and is_50EMA_below_200EMA and is_current_green
-            if sce_2:
+            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA and is_current_green #***** with Compounding
+            sce_3 = volume_increase(data, i) and data.iloc[i]['Close'] < data.iloc[i]['EMA_200'] #***** no Compounding
+            sce_4 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40) and is_current_green #***** No Compunding 285% without Green/ with Green 216%
+            sce_5 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
+            if sce_5:
                 buy_date = data.index[i].date()
                 bought_price = round(data.iloc[i]['Close'], 2)
                 quantity_bought = int(capital_per_stock / bought_price)
@@ -493,13 +512,8 @@ if __name__ == "__main__":
     create_chart = str(config['trade_symbol']['create_chart'])
     create_chart = True if create_chart == 'true' else False
     # Access sections and keys
-    from_date_1 = str(config['time_management']['from_date'])
-    # Convert from_date to a datetime object
-    from_date_obj = datetime.strptime(from_date_1, '%Y-%m-%d')
-    # Subtract one year
-    adjusted_from_date_obj = from_date_obj.replace(year=from_date_obj.year - 1)
-    # Convert the adjusted date back to a string
-    from_date = adjusted_from_date_obj.strftime('%Y-%m-%d')
+    from_date = str(config['time_management']['from_date'])
+
     to_date = str(config['time_management']['to_date'])
     capital = float(config['risk_management']['capital'])
     no_of_stock_to_trade = int(config['risk_management']['no_of_stock_to_trade'])
