@@ -2,7 +2,6 @@ import pandas as pd
 import yfinance as yf
 #import talib as ta
 import os
-import matplotlib.pyplot as plt
 import numpy as np
 import configparser
 import shutil
@@ -17,8 +16,6 @@ def create_directory(symbols_type):
         directory_name = symbols_type + "_" + directory
         if not os.path.exists(directory_name):
             os.makedirs(directory_name)
-
-
 def create_master_file(summary_dir):
     # Initialize lists to store data
     stock_names = []
@@ -72,10 +69,8 @@ def create_master_file(summary_dir):
 
     # Append overall totals to the Master DataFrame
     master_df = pd.concat([master_df, pd.DataFrame(overall_totals, index=[0])], ignore_index=True)
-
     # Save Master DataFrame to CSV
     master_df.to_csv(f"{Master_Dir}/Master.csv", index=False)
-
 def visualize_capital_and_drawdown(capital_history, drawdown_history):
     plt.figure(figsize=(12, 6))
     # Plotting the capital history
@@ -392,8 +387,9 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             rsi_below = pd_rsi_below_n(data, i, 14,30)
             #print(data)
             sce_1 = volume_increase(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA and is_current_green
-            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA # Nifty 100 ==> 474 %
-            sce_3 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_below_200EMA # Nifty 100 ==> 432 %
+            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA
+            sce_3 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_below_200EMA
+            sce_4 = volume_increase(data, i) and rsi_below and is_current_green
             if sce_3:
                 buy_date = data.index[i].date()
                 bought_price = round(data.iloc[i]['Close'], 2)
@@ -413,13 +409,11 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
                 data.loc[data.index[i], 'Buy Signal'] = data.iloc[i]['Low'].astype(float)
                 data.loc[data.index[i], 'Target Level'] = target
                 data.loc[data.index[i], 'Stop Loss Level'] = stop_loss
-
         elif trade and (trade['Stop Loss'] >= data.iloc[i]['Low'] or trade['Target'] <= data.iloc[i]['High']):
             if trade['Target'] <= data.iloc[i]['High']:
                 profit_amount = round((trade['Target'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
             elif trade['Stop Loss'] >= data.iloc[i]['Low']:
                 profit_amount = round((trade['Stop Loss'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
-
             sell_date = data.index[i].date()
             trade['Exited Date'] = sell_date
             trade['Profit Amount'] = profit_amount
@@ -440,27 +434,21 @@ def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_per
     try:
         # Fetch data from Yahoo Finance
         data = fetch_yahoo_finance_data(symbol, start_date, end_date)
-
         if data.empty:
             print(f"No data found for {symbol}. Skipping...")
             return  # Skip this stock
-
         # Calculate EMA
         data = calculate_ema(data, 200)
         data = calculate_ema(data, 50)
         data = calculate_ema(data, 20)
         data = calculate_ema(data, 7)
-
         # Calculate capital per stock
         capital_per_stock = round(capital / no_of_stock_to_trade, 2)  # Assuming you're allowed to trade 10 stocks at a time
-
         # Check buying conditions and track trades
         trades = check_buy_conditions(data, capital, capital_per_stock, target_percentage, stop_loss_percentage)
-
         if not trades:
             print(f"No trades found for {symbol}. Skipping...")
             return  # Skip this stock
-
         # Calculate No of holding Days
         df = pd.DataFrame(trades)
         df['Buy Date'] = pd.to_datetime(df['Buy Date'])  # Convert Buy Date to datetime format
@@ -507,9 +495,9 @@ if __name__ == "__main__":
     create_chart = str(config['trade_symbol']['create_chart'])
     create_chart = True if create_chart == 'true' else False
     # Access sections and keys
-    from_date = str(config['time_management']['from_date'])
+    from_date_1 = str(config['time_management']['from_date'])
     # Convert from_date to a datetime object
-    from_date_obj = datetime.strptime(from_date, '%Y-%m-%d')
+    from_date_obj = datetime.strptime(from_date_1, '%Y-%m-%d')
     # Subtract one year
     adjusted_from_date_obj = from_date_obj.replace(year=from_date_obj.year - 1)
     # Convert the adjusted date back to a string
