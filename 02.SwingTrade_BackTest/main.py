@@ -360,7 +360,6 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
     capital_history = [capital]
     drawdown = 0
     drawdown_history = [drawdown]
-
     for i in range(100, len(data)):  # Start from the 4th day to have enough data for calculations
         if not trade and data.index[i].date() >= datetime.strptime(from_date, '%Y-%m-%d').date():
             is_previous_red = (data.iloc[i - 1]['Close'] < data.iloc[i - 1]['Open'])
@@ -376,21 +375,20 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             is_close_below_20EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_20']
             is_close_above_20EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_20']
             is_close_above_7EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_7']
-
+            is_close_below_7EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_7']
             is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
             is_50EMA_below_200EMA = data.iloc[i]['EMA_50'] < data.iloc[i]['EMA_200']
             is_20EMA_below_50EMA = data.iloc[i]['EMA_20'] < data.iloc[i]['EMA_50']
             is_current_open_less_than_previous_close = data.iloc[i]['Open'] < data.iloc[i - 1]['Close']
-
             rsi_above = pd_rsi_above_n(data, i, 14, 30)
             rsi_cross = pd_rsi_cross_n(data, i, 14,30)
             rsi_below = pd_rsi_below_n(data, i, 14,30)
             #print(data)
             sce_1 = volume_increase(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA and is_current_green
-            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA
-            sce_3 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_below_200EMA
-            sce_4 = volume_increase(data, i) and rsi_below and is_current_green
-            if sce_3:
+            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA and is_current_green #*****
+            sce_3 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_below_200EMA and is_current_green
+            sce_4 = volume_increase(data, i) and is_close_below_7EMA and is_50EMA_below_200EMA and is_current_green
+            if sce_2:
                 buy_date = data.index[i].date()
                 bought_price = round(data.iloc[i]['Close'], 2)
                 quantity_bought = int(capital_per_stock / bought_price)
