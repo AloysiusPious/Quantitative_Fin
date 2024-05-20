@@ -16,8 +16,6 @@ def create_directory(symbols_type):
         directory_name = symbols_type + "_" + directory
         if not os.path.exists(directory_name):
             os.makedirs(directory_name)
-
-
 def create_master_file(summary_dir):
     # Initialize lists to store data
     stock_names = []
@@ -97,64 +95,10 @@ def create_master_file(summary_dir):
     master_df = pd.concat([master_df, pd.DataFrame(overall_totals, index=[0])], ignore_index=True)
 
     # Save Master DataFrame to CSV
-    master_df.to_csv(f"{Master_Dir}/Master_Sce_2_Nifty_100.csv", index=False)
-
-
-def create_master_file_old(summary_dir):
-    # Initialize lists to store data
-    stock_names = []
-    total_trades = []
-    total_winning_trades = []
-    total_losing_trades = []
-    total_winning_trade_percentage = []
-    total_losing_trade_percentage = []
-    total_profit = []
-    total_cumulative_return_percentage = []
-
-    # Iterate over the summary files for each stock
-    for filename in os.listdir(summary_dir):
-        if filename.endswith("_summary.csv"):
-            stock_name = filename.split("_")[0]  # Extract stock name from filename
-            df_summary = pd.read_csv(os.path.join(summary_dir, filename))
-
-            # Extract data from the summary DataFrame
-            stock_names.append(stock_name)
-            total_trades.append(df_summary['Total Trades'].values[0])
-            total_winning_trades.append(df_summary['No of Winning Trade'].values[0])
-            total_losing_trades.append(df_summary['No of Losing Trade'].values[0])
-            total_winning_trade_percentage.append(round(df_summary['Winning Trade Percentage'].values[0], 2))
-            total_losing_trade_percentage.append(round(df_summary['Losing Trade Percentage'].values[0], 2))
-            total_profit.append(round(df_summary['Total Profit'].values[0], 2))
-            total_cumulative_return_percentage.append(round(df_summary['Cumulative Return Percentage'].values[0], 2))
-
-    # Create the Master DataFrame
-    master_df = pd.DataFrame({
-        'Stock Name': stock_names,
-        'Total Trades': total_trades,
-        'No of Winning Trade': total_winning_trades,
-        'No of Losing Trade': total_losing_trades,
-        'Winning Trade Percentage': total_winning_trade_percentage,
-        'Losing Trade Percentage': total_losing_trade_percentage,
-        'Total Profit': total_profit,
-        'Total Cumulative Return Percentage': total_cumulative_return_percentage
-    })
-
-    # Calculate overall totals
-    overall_totals = {
-        'Stock Name': 'Overall',
-        'Total Trades': sum(total_trades),
-        'No of Winning Trade': sum(total_winning_trades),
-        'No of Losing Trade': sum(total_losing_trades),
-        'Winning Trade Percentage': round((sum(total_winning_trades) / sum(total_trades)) * 100, 2),
-        'Losing Trade Percentage': round((sum(total_losing_trades) / sum(total_trades)) * 100, 2),
-        'Total Profit': round(sum(total_profit), 2),
-        'Total Cumulative Return Percentage': round((sum(total_profit) / capital) * 100, 2)
-    }
-
-    # Append overall totals to the Master DataFrame
-    master_df = pd.concat([master_df, pd.DataFrame(overall_totals, index=[0])], ignore_index=True)
-    # Save Master DataFrame to CSV
     master_df.to_csv(f"{Master_Dir}/Master.csv", index=False)
+
+
+
 def visualize_capital_and_drawdown(capital_history, drawdown_history):
     plt.figure(figsize=(12, 6))
     # Plotting the capital history
@@ -188,18 +132,6 @@ def visualize(data, target_col, stop_loss_col, stock, Charts_Dir):
     plt.savefig(f'{Charts_Dir}/{stock}_plot.png')
     plt.close()
 
-def visualize_1(data, target, stop_loss):
-    # Plotting the chart with buy signals
-    plt.figure(figsize=(12, 6))
-    plt.plot(data.index, data['Close'], label='Close Price')
-    plt.scatter(data.index, data['Buy Signal'], color='red', marker='^', label='Buy Signal')
-    plt.xlabel('Date')
-    plt.ylabel('Price')
-    plt.title('Chart with Buy Signals')
-    plt.legend()
-    plt.savefig(f'{Charts_Dir}/' + f'{stock}_plot.png')
-    #plt.show()
-    plt.close()
 def remove_directory():
     directories_to_remove = ["Reports", "Charts", "Summary", "Master"]
     for directory in directories_to_remove:
@@ -239,12 +171,7 @@ def fetch_yahoo_finance_data(symbol, start_date, end_date):
 def calculate_ema(data, ema_period):
     data['EMA_' + str(ema_period)] = data['Close'].rolling(window=ema_period).mean()
     return data
-'''
-# Define function to calculate EMA
-def calculate_ema(data, ema_period=200):
-    data['EMA_'+str(ema_period)] = ta.EMA(data['Close'], timeperiod=ema_period)
-    return data
-'''
+
 # Define function to check buying conditions and track trades
 def pd_rsi_below_n(filtered_df, i, window = 14, n = 30):
     # Calculate RSI with a period of 14 days
@@ -285,18 +212,6 @@ def pd_rsi_cross_n(filtered_df, i, window = 14, n = 30):
     rsi_cross = (rsi.iloc[i - 2] < n) and (rsi.iloc[i] > n)
     return rsi_cross
 
-def visualize_capital_and_drawdown(capital_history, drawdown_history):
-    plt.figure(figsize=(12, 6))
-    # Plotting the capital history
-    plt.plot(capital_history, label='Capital', color='blue')
-    # Plotting the drawdown history
-    plt.plot(drawdown_history, label='Drawdown', color='red')
-    plt.xlabel('Time')
-    plt.ylabel('Amount')
-    plt.title(f'{stock} Capital and Drawdown Over Time')
-    plt.legend()
-    plt.savefig(f'{Charts_Dir}/capital_drawdown.png')
-    plt.close()
 def visualize(data, target_col, stop_loss_col, stock, Charts_Dir):
     plt.figure(figsize=(12, 6))
     # Plotting the close price
@@ -318,18 +233,6 @@ def visualize(data, target_col, stop_loss_col, stock, Charts_Dir):
     plt.savefig(f'{Charts_Dir}/{stock}_plot.png')
     plt.close()
 
-def visualize_1(data, target, stop_loss):
-    # Plotting the chart with buy signals
-    plt.figure(figsize=(12, 6))
-    plt.plot(data.index, data['Close'], label='Close Price')
-    plt.scatter(data.index, data['Buy Signal'], color='red', marker='^', label='Buy Signal')
-    plt.xlabel('Date')
-    plt.ylabel('Price')
-    plt.title('Chart with Buy Signals')
-    plt.legend()
-    plt.savefig(f'{Charts_Dir}/' + f'{stock}_plot.png')
-    #plt.show()
-    plt.close()
 def remove_directory():
     directories_to_remove = ["Reports", "Charts", "Summary", "Master"]
     for directory in directories_to_remove:
@@ -517,7 +420,7 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             sce_4 = volume_increase(data, i) and data.iloc[i]['Close'] < data.iloc[i]['EMA_200'] #***** no Compounding
             sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40) and is_current_green #***** No Compunding 285% without Green/ with Green 216%
             sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
-            if sce_2:
+            if sce_4:
                 buy_date = data.index[i].date()
                 bought_price = round(data.iloc[i]['Close'], 2)
                 quantity_bought = int(capital_per_stock / bought_price)
@@ -576,86 +479,6 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
 
     return trades, total_charges_paid
 
-
-def check_buy_conditions_old(data, capital, capital_per_stock, target_percentage, stop_loss_percentage):
-    trade = None
-    trades = []
-    invested_amount = 0
-    ###
-    capital_history = [capital]
-    drawdown = 0
-    drawdown_history = [drawdown]
-    for i in range(100, len(data)):  # Start from the 4th day to have enough data for calculations
-        if not trade and data.index[i].date() >= datetime.strptime(from_date, '%Y-%m-%d').date():
-            is_previous_red = (data.iloc[i - 1]['Close'] < data.iloc[i - 1]['Open'])
-            is_previous_three_red = (data.iloc[i - 1]['Close'] < data.iloc[i - 1]['Open']) and (
-                    data.iloc[i - 2]['Close'] < data.iloc[i - 2]['Open']) and (
-                                            data.iloc[i - 3]['Close'] < data.iloc[i - 3]['Open'])
-            is_current_green = (data.iloc[i]['Close'] > data.iloc[i]['Open'])
-            is_current_close_above_previous_open = (data.iloc[i]['Close'] > data.iloc[i - 1]['Open'])
-            is_close_above_200EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_200']
-            is_close_below_200EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_200']
-            is_close_above_50EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_50']
-            is_close_below_50EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_50']
-            is_close_below_20EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_20']
-            is_close_above_20EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_20']
-            is_close_above_7EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_7']
-            is_close_below_7EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_7']
-            is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
-            is_50EMA_below_200EMA = data.iloc[i]['EMA_50'] < data.iloc[i]['EMA_200']
-            is_20EMA_below_50EMA = data.iloc[i]['EMA_20'] < data.iloc[i]['EMA_50']
-            is_current_open_less_than_previous_close = data.iloc[i]['Open'] < data.iloc[i - 1]['Close']
-            rsi_above = pd_rsi_above_n(data, i, 14, 30)
-            rsi_cross = pd_rsi_cross_n(data, i, 14,30)
-            rsi_below = pd_rsi_below_n(data, i, 14,30)
-
-            macd_signal = macd_cross(data, i)
-            #print(data)
-            sce_1 = volume_increase(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA and is_current_green
-            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA and is_current_green #***** 266.23 with no Compounding 300+ trades
-            sce_3 = volume_increase(data, i) and is_close_below_7EMA and is_50EMA_above_200EMA and is_current_green  # *****  196.49 with no Compounding 230 Trades
-            sce_4 = volume_increase(data, i) and data.iloc[i]['Close'] < data.iloc[i]['EMA_200'] #***** no Compounding
-            sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40)#***** No Compunding 285% without Green/ with Green 216%
-            sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
-            if sce_1:
-                buy_date = data.index[i].date()
-                bought_price = round(data.iloc[i]['Close'], 2)
-                quantity_bought = int(capital_per_stock / bought_price)
-                stop_loss = round_to_nearest_five_cents(bought_price * (1 - stop_loss_percentage / 100))
-                target = round_to_nearest_five_cents(bought_price * (1 + target_percentage / 100))
-                trade = {
-                    'Buy Date': buy_date,
-                    'Bought Price': bought_price,
-                    'Quantity Bought': quantity_bought,
-                    'Invested Amount': capital_per_stock,
-                    'Stop Loss': stop_loss,
-                    'Target': target,
-                    'Exited Date': None,
-                    'Profit Amount': None
-                }
-                data.loc[data.index[i], 'Buy Signal'] = data.iloc[i]['Low'].astype(float)
-                data.loc[data.index[i], 'Target Level'] = target
-                data.loc[data.index[i], 'Stop Loss Level'] = stop_loss
-        elif trade and (trade['Stop Loss'] >= data.iloc[i]['Low'] or trade['Target'] <= data.iloc[i]['High']):
-            if trade['Target'] <= data.iloc[i]['High']:
-                profit_amount = round((trade['Target'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
-            elif trade['Stop Loss'] >= data.iloc[i]['Low']:
-                profit_amount = round((trade['Stop Loss'] - trade['Bought Price']) * trade['Quantity Bought'], 2)
-            sell_date = data.index[i].date()
-            trade['Exited Date'] = sell_date
-            trade['Profit Amount'] = round_to_nearest_five_cents(profit_amount)
-            trades.append(trade)
-            trade = None
-            if compound:
-                #####Compounding with Overall Capital
-                #capital += profit_amount
-                #capital_per_stock = round(capital / 10, 2)
-                #####Compounding with individual stock allocated Capital
-                capital_per_stock += round_to_nearest_five_cents(profit_amount)
-    if create_chart:
-        visualize(data, 'Target Level', 'Stop Loss Level', stock, Charts_Dir)
-        #visualize_capital_and_drawdown(capital_history, drawdown_history)
-    return trades
 
 def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_percentage):
     try:
