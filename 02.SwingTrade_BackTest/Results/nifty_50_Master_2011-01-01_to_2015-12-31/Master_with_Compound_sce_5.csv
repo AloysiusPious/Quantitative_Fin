@@ -1,3 +1,5 @@
+            sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA and is_current_green #***** 266.23 with no Compounding 300+ trades
+
 Stock Name,Total Trades,No of Winning Trade,No of Losing Trade,Winning Trade Percentage,Losing Trade Percentage,Total Profit,Total Cumulative Return Percentage,Total Charges Paid,Profit After Charges,Profit Percentage After Charges,Total Charges Percentage
 ADANIENT.NS,9,7,2,77.78,22.22,46100.8,4.61,3405.65,42695.15,4.27,0.34
 ADANIPORTS.NS,8,6,2,75.0,25.0,26275.35,2.63,3779.45,22495.9,2.25,0.38
