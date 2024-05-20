@@ -154,7 +154,7 @@ def create_master_file_old(summary_dir):
     # Append overall totals to the Master DataFrame
     master_df = pd.concat([master_df, pd.DataFrame(overall_totals, index=[0])], ignore_index=True)
     # Save Master DataFrame to CSV
-    master_df.to_csv(f"{Master_Dir}/Master.csv", index=False)
+    master_df.to_csv(f"{Master_Dir}/Master_sce_5.csv", index=False)
 def visualize_capital_and_drawdown(capital_history, drawdown_history):
     plt.figure(figsize=(12, 6))
     # Plotting the capital history
@@ -478,7 +478,7 @@ def macd_cross(data, i):
     return None
 
 def check_buy_conditions(data, capital, capital_per_stock, target_percentage, stop_loss_percentage,):
-    total_charges_percentage = 0.2
+    #total_charges_percentage = 0.2
     trade = None
     trades = []
     total_charges_paid = 0
@@ -517,7 +517,7 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             sce_4 = volume_increase(data, i) and data.iloc[i]['Close'] < data.iloc[i]['EMA_200'] #***** no Compounding
             sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40) and is_current_green #***** No Compunding 285% without Green/ with Green 216%
             sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
-            if sce_2:
+            if sce_5:
                 buy_date = data.index[i].date()
                 bought_price = round(data.iloc[i]['Close'], 2)
                 quantity_bought = int(capital_per_stock / bought_price)
@@ -615,9 +615,9 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA and is_current_green #***** 266.23 with no Compounding 300+ trades
             sce_3 = volume_increase(data, i) and is_close_below_7EMA and is_50EMA_above_200EMA and is_current_green  # *****  196.49 with no Compounding 230 Trades
             sce_4 = volume_increase(data, i) and data.iloc[i]['Close'] < data.iloc[i]['EMA_200'] #***** no Compounding
-            sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40) and is_current_green #***** No Compunding 285% without Green/ with Green 216%
+            sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40)#***** No Compunding 285% without Green/ with Green 216%
             sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
-            if sce_3:
+            if sce_5:
                 buy_date = data.index[i].date()
                 bought_price = round(data.iloc[i]['Close'], 2)
                 quantity_bought = int(capital_per_stock / bought_price)
@@ -738,6 +738,8 @@ if __name__ == "__main__":
     compound = True if compound == 'true' else False
     target_percentage = float(config['risk_management']['target_percentage'])
     stop_loss_percentage = float(config['risk_management']['stop_loss_percentage'])
+    total_charges_percentage = float(config['risk_management']['charges_percentage'])
+
     ###
     cleanup_logs = str(config['house_keeping']['cleanup_logs'])
     cleanup_logs = True if cleanup_logs == 'true' else False
@@ -768,7 +770,7 @@ if __name__ == "__main__":
         charges_paid, trades = main(stock + ".NS", from_date, to_date, capital, target_percentage, stop_loss_percentage)
         total_charges_for_all_stocks += charges_paid
 
-    # Call function to create the Master.csv file
+    # Call function to create the Master_no_Compound_sce_5.csv file
     create_master_file(Summary_Dir)
 
     # Print total charges paid for all stocks
