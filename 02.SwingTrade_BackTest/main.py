@@ -158,9 +158,9 @@ def volume_increase_and_open_below_yday_close(data, i):
 
     # Calculate the 20-day moving average of the volume for the entire DataFrame
     data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
-
+    volume_avg = data.iloc[i - 20:i]['Volume'].mean()
     # Check if yesterday's volume was at least 50% higher than the 20-day average
-    if data.iloc[i - 1]['Volume'] > (data.iloc[i - 1]['20d_avg_volume'] * 1.50):
+    if volume_avg * 1.5 < data.iloc[i - 1]['Volume']:
         # Check if today's open is less than yesterday's close
         if data.iloc[i]['Open'] < data.iloc[i - 1]['Close']:
             return True
@@ -440,6 +440,7 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
                     data.iloc[i - 2]['Close'] < data.iloc[i - 2]['Open']) and (
                                             data.iloc[i - 3]['Close'] < data.iloc[i - 3]['Open'])
             is_current_green = (data.iloc[i]['Close'] > data.iloc[i]['Open'])
+            is_previous_green = (data.iloc[i - 1]['Close'] > data.iloc[i - 1]['Open'])
             is_current_close_above_previous_open = (data.iloc[i]['Close'] > data.iloc[i - 1]['Open'])
             is_close_above_200EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_200']
             is_close_below_200EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_200']
@@ -467,10 +468,10 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
             sce_7 = volume_increase_and_retracement(data, i) and is_50EMA_above_200EMA
             ###bought_price Should be Yesterday High for sce_8==>(bought_price = round(data.iloc[i]['Close'], 2))
-            sce_8 = volume_increase_and_open_below_yday_close(data, i) and yday_close_above_7EMA and is_50EMA_above_200EMA
-            if sce_8:
+            sce_8 = volume_increase_and_open_below_yday_close(data, i) and yday_close_above_7EMA and is_50EMA_above_200EMA and is_previous_green
+            if sce_8 and data.iloc[i]['High'] > data.iloc[i - 1]['High']:
                 buy_date = data.index[i].date()
-                bought_price = round(data.iloc[i]['Close'], 2)
+                bought_price = round(data.iloc[i - 1]['High'], 2)
                 quantity_bought = int(capital_per_stock / bought_price)
                 stop_loss = round_to_nearest_five_cents(bought_price * (1 - stop_loss_percentage / 100))
                 target = round_to_nearest_five_cents(bought_price * (1 + target_percentage / 100))
