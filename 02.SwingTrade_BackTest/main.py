@@ -466,6 +466,7 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40) and is_current_green #***** No Compunding 285% without Green/ with Green 216%
             sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
             sce_7 = volume_increase_and_retracement(data, i) and is_50EMA_above_200EMA
+            ###bought_price Should be Yesterday High for sce_8==>(bought_price = round(data.iloc[i]['Close'], 2))
             sce_8 = volume_increase_and_open_below_yday_close(data, i) and yday_close_above_7EMA and is_50EMA_above_200EMA
             if sce_8:
                 buy_date = data.index[i].date()
@@ -473,12 +474,10 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
                 quantity_bought = int(capital_per_stock / bought_price)
                 stop_loss = round_to_nearest_five_cents(bought_price * (1 - stop_loss_percentage / 100))
                 target = round_to_nearest_five_cents(bought_price * (1 + target_percentage / 100))
-
                 # Calculate charges for buying
                 buy_turnover = bought_price * quantity_bought
                 buy_charges = (total_charges_percentage / 100) * buy_turnover
                 total_charges_paid += round_to_nearest_five_cents(buy_charges)
-
                 trade = {
                     'Buy Date': buy_date,
                     'Bought Price': bought_price,
