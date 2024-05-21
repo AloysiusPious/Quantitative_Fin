@@ -151,6 +151,50 @@ def volume_increase(data,i):
         return True
     else:
         return False
+def volume_increase_and_open_below_yday_close(data, i):
+    # Ensure there's enough data for the calculations
+    if i < 19:
+        return False
+
+    # Calculate the 20-day moving average of the volume for the entire DataFrame
+    data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
+
+    # Check if yesterday's volume was at least 50% higher than the 20-day average
+    if data.iloc[i - 1]['Volume'] > (data.iloc[i - 1]['20d_avg_volume'] * 1.50):
+        # Check if today's open is less than yesterday's close
+        if data.iloc[i]['Open'] < data.iloc[i - 1]['Close']:
+            return True
+
+    return False
+def volume_increase_and_retracement(data, i):
+    # Ensure there's enough data for the calculations
+    if i < 19:
+        return False
+    # Calculate the 20-day moving average of the volume for the entire DataFrame
+    data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
+    # Check for high volume in one of the past 10 days and if it closed above the 7-day EMA
+    high_volume_day = -1
+    for j in range(i - 10, i):
+        if data.iloc[j]['Volume'] > (data.iloc[j]['20d_avg_volume'] * 1.50) and data.iloc[j]['Close'] > data.iloc[j]['EMA_7']:
+            high_volume_day = j
+            break
+    if high_volume_day == -1:
+        return False
+    # Calculate today's retracement
+    today_open = data.iloc[i]['Open']
+    today_low = data.iloc[i]['Low']
+    today_high = data.iloc[i]['High']
+    # Calculate the high volume candle's retracement level
+    high_volume_open = data.iloc[high_volume_day]['Open']
+    high_volume_low = data.iloc[high_volume_day]['Low']
+    high_volume_high = data.iloc[high_volume_day]['High']
+    if high_volume_high == high_volume_low:
+        return False
+    high_volume_retracement_level = high_volume_low + 0.1 * (high_volume_high - high_volume_low)
+    # Check if today's retracement is equal to or more than 50% of the high volume candle
+    if today_low <= high_volume_retracement_level:
+        return True
+    return False
 def convert_col_digit(data,column):
     for col in column:
         data[col] = data[col].apply(round_to_nearest_five_cents)
@@ -404,6 +448,7 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             is_close_below_20EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_20']
             is_close_above_20EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_20']
             is_close_above_7EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_7']
+            yday_close_above_7EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_7']
             is_close_below_7EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_7']
             is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
             is_50EMA_below_200EMA = data.iloc[i]['EMA_50'] < data.iloc[i]['EMA_200']
@@ -420,7 +465,9 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             sce_4 = volume_increase(data, i) and data.iloc[i]['Close'] < data.iloc[i]['EMA_200'] #***** no Compounding
             sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40) and is_current_green #***** No Compunding 285% without Green/ with Green 216%
             sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
-            if sce_4:
+            sce_7 = volume_increase_and_retracement(data, i) and is_50EMA_above_200EMA
+            sce_8 = volume_increase_and_open_below_yday_close(data, i) and yday_close_above_7EMA and is_50EMA_above_200EMA
+            if sce_8:
                 buy_date = data.index[i].date()
                 bought_price = round(data.iloc[i]['Close'], 2)
                 quantity_bought = int(capital_per_stock / bought_price)
