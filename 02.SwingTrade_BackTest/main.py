@@ -468,10 +468,14 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
             sce_7 = volume_increase_and_retracement(data, i) and is_50EMA_above_200EMA
             ###bought_price Should be Yesterday High for sce_8==>(bought_price = round(data.iloc[i]['Close'], 2))
-            sce_8 = volume_increase_and_open_below_yday_close(data, i) and yday_close_above_7EMA and is_50EMA_above_200EMA and is_previous_green
-            if sce_8 and data.iloc[i]['High'] > data.iloc[i - 1]['High']:
+            sce_8 = data.iloc[i]['High'] > data.iloc[i - 1]['High'] and volume_increase_and_open_below_yday_close(data, i) and yday_close_above_7EMA and is_50EMA_above_200EMA and is_previous_green
+            if sce_8:
                 buy_date = data.index[i].date()
+                ##Only for Sce_8
                 bought_price = round(data.iloc[i - 1]['High'], 2)
+                ###
+                ##For Other Sce's
+                ##bought_price = round(data.iloc[i]['Close'], 2)
                 quantity_bought = int(capital_per_stock / bought_price)
                 stop_loss = round_to_nearest_five_cents(bought_price * (1 - stop_loss_percentage / 100))
                 target = round_to_nearest_five_cents(bought_price * (1 + target_percentage / 100))
@@ -602,6 +606,8 @@ if __name__ == "__main__":
     # Access sections and keys
     from_date = str(config['time_management']['from_date'])
     to_date = str(config['time_management']['to_date'])
+    year_wise = str(config['time_management']['year_wise'])
+    year_wise = True if year_wise == 'true' else False
     capital = float(config['risk_management']['capital'])
     no_of_stock_to_trade = int(config['risk_management']['no_of_stock_to_trade'])
     compound = str(config['risk_management']['compound'])
