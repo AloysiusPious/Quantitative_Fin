@@ -15,6 +15,16 @@ def extract_date_range_from_filename(filename):
         return match.group(1), match.group(2)
     return None, None
 
+import os
+import pandas as pd
+import re
+
+def extract_date_range_from_filename(filename):
+    match = re.search(r'Master_(\d{4}-\d{2}-\d{2})_to_(\d{4}-\d{2}-\d{2})\.csv', filename)
+    if match:
+        return match.group(1), match.group(2)
+    return None, None
+
 def process_files(directory):
     final_data = []
 
@@ -32,7 +42,32 @@ def process_files(directory):
         'Winning Trade Percentage', 'Losing Trade Percentage', 'Total Profit', 'Total Cumulative Return Percentage',
         'Total Charges Paid', 'Profit After Charges', 'Profit Percentage After Charges', 'Total Charges Percentage'
     ])
-    final_df.to_csv(f"{Master_Dir}_Final_Consolidated.csv", index=False)
+
+    # Calculate grand totals and averages
+    grand_totals = {
+        'Start Year': 'Grand Total',
+        'End Year': '',
+        'Stock Name': 'Overall',
+        'Total Trades': final_df['Total Trades'].sum(),
+        'No of Winning Trade': final_df['No of Winning Trade'].sum(),
+        'No of Losing Trade': final_df['No of Losing Trade'].sum(),
+        'Winning Trade Percentage': round((final_df['No of Winning Trade'].sum() / final_df['Total Trades'].sum()) * 100, 2) if final_df['Total Trades'].sum() > 0 else 0,
+        'Losing Trade Percentage': round((final_df['No of Losing Trade'].sum() / final_df['Total Trades'].sum()) * 100, 2) if final_df['Total Trades'].sum() > 0 else 0,
+        'Total Profit': final_df['Total Profit'].sum(),
+        'Total Cumulative Return Percentage': final_df['Total Cumulative Return Percentage'].mean(),
+        'Total Charges Paid': final_df['Total Charges Paid'].sum(),
+        'Profit After Charges': final_df['Profit After Charges'].sum(),
+        'Profit Percentage After Charges': round_to_nearest_five_cents(final_df['Profit Percentage After Charges'].mean()),
+        'Total Charges Percentage': round_to_nearest_five_cents(final_df['Total Charges Percentage'].mean())
+    }
+
+    overall_df = pd.DataFrame([grand_totals])
+    final_df = pd.concat([final_df, overall_df], ignore_index=True)
+
+    # Save the consolidated DataFrame to CSV
+    final_df.to_csv(f"{directory}/Final_Consolidated.csv", index=False)
+    print("Final_Consolidated.csv created successfully.")
+
 def create_directory(symbols_type):
     directories_to_create = [f'Reports_{from_date}_to_{to_date}', f'Charts_{from_date}_to_{to_date}',
                              f'Summary_{from_date}_to_{to_date}', f'Master_{from_date}_to_{to_date}']
@@ -106,8 +141,8 @@ def create_master_file(summary_dir):
         'Total Trades': sum(total_trades),
         'No of Winning Trade': sum(total_winning_trades),
         'No of Losing Trade': sum(total_losing_trades),
-        'Winning Trade Percentage': round((sum(total_winning_trades) / sum(total_trades)) * 100, 2),
-        'Losing Trade Percentage': round((sum(total_losing_trades) / sum(total_trades)) * 100, 2),
+        'Winning Trade Percentage': round((sum(total_winning_trades) / sum(total_trades)) * 100, 2) if sum(total_trades) > 0 else 0,
+        'Losing Trade Percentage': round((sum(total_losing_trades) / sum(total_trades)) * 100, 2) if sum(total_trades) > 0 else 0,
         'Total Profit': round(sum(total_profit), 2),
         'Total Cumulative Return Percentage': round((sum(total_profit) / capital) * 100, 2),
         'Total Charges Paid': round(sum(total_charges_paid_list), 2),
@@ -672,7 +707,7 @@ if __name__ == "__main__":
         to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
         start_year = from_date.year
         end_year = to_date.year
-        for year in range(start_year, end_year + 1):
+        for year in range(start_year, end_year):
             from_date = str(int(year))+'-'+'01-01'
             to_date = str(int(year + 1)) + '-' + '12-31'
             print(f"{from_date}----{to_date}")
@@ -693,7 +728,6 @@ if __name__ == "__main__":
             # Call main function with parameters and aggregate total charges
             charges_paid, trades = main(stock + ".NS", from_date, to_date, capital, target_percentage, stop_loss_percentage)
             total_charges_for_all_stocks += charges_paid
-
         # Call function to create the Master_no_Compound_sce_5.csv file
         create_master_file(Summary_Dir)
     # Print total charges paid for all stocks
