@@ -7,7 +7,32 @@ import configparser
 import shutil
 import glob
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
+import re
+def extract_date_range_from_filename(filename):
+    match = re.search(r'Master_(\d{4}-\d{2}-\d{2})_to_(\d{4}-\d{2}-\d{2})\.csv', filename)
+    if match:
+        return match.group(1), match.group(2)
+    return None, None
+
+def process_files(directory):
+    final_data = []
+
+    for filename in os.listdir(directory):
+        if filename.startswith("Master_") and filename.endswith(".csv"):
+            start_date, end_date = extract_date_range_from_filename(filename)
+            if start_date and end_date:
+                filepath = os.path.join(directory, filename)
+                df = pd.read_csv(filepath)
+                overall_row = df[df['Stock Name'] == 'Overall'].iloc[0]
+                final_data.append([start_date, end_date] + overall_row.tolist())
+
+    final_df = pd.DataFrame(final_data, columns=[
+        'Start Year', 'End Year', 'Stock Name', 'Total Trades', 'No of Winning Trade', 'No of Losing Trade',
+        'Winning Trade Percentage', 'Losing Trade Percentage', 'Total Profit', 'Total Cumulative Return Percentage',
+        'Total Charges Paid', 'Profit After Charges', 'Profit Percentage After Charges', 'Total Charges Percentage'
+    ])
+    final_df.to_csv(f"{Master_Dir}_Final_Consolidated.csv", index=False)
 def create_directory(symbols_type):
     directories_to_create = [f'Reports_{from_date}_to_{to_date}', f'Charts_{from_date}_to_{to_date}',
                              f'Summary_{from_date}_to_{to_date}', f'Master_{from_date}_to_{to_date}']
@@ -33,7 +58,7 @@ def create_master_file(summary_dir):
 
     # Iterate over the summary files for each stock
     for filename in os.listdir(summary_dir):
-        if filename.endswith("_summary.csv"):
+        if filename.endswith(f"_summary_{from_date}_to_{to_date}.csv"):
             stock_name = filename.split("_")[0]  # Extract stock name from filename
             df_summary = pd.read_csv(os.path.join(summary_dir, filename))
 
@@ -95,7 +120,7 @@ def create_master_file(summary_dir):
     master_df = pd.concat([master_df, pd.DataFrame(overall_totals, index=[0])], ignore_index=True)
 
     # Save Master DataFrame to CSV
-    master_df.to_csv(f"{Master_Dir}/Master.csv", index=False)
+    master_df.to_csv(f"{Master_Dir}/Master_{from_date}_to_{to_date}.csv", index=False)
 
 
 
@@ -274,7 +299,7 @@ def visualize(data, target_col, stop_loss_col, stock, Charts_Dir):
     plt.title(f'{stock} Chart with Buy Signals, Target, and Stop Loss')
     plt.legend()
 
-    plt.savefig(f'{Charts_Dir}/{stock}_plot.png')
+    plt.savefig(f'{Charts_Dir}/{stock}_{from_date}_to_{to_date}_plot.png')
     plt.close()
 
 def remove_directory():
@@ -564,7 +589,7 @@ def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_per
         df['Profit %'] = round((df['Profit Amount'] / df['Invested Amount']) * 100, 2)
 
         # Save DataFrame to CSV with Bought Price field
-        df.to_csv(f"{Reports_Dir}/{symbol}_trades.csv", index=False)
+        df.to_csv(f"{Reports_Dir}/{symbol}_trades_{from_date}_to_{to_date}.csv", index=False)
 
         # Create summary DataFrame
         summary_df = pd.DataFrame({
@@ -586,7 +611,7 @@ def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_per
         })
 
         # Save summary DataFrame to CSV
-        summary_df.to_csv(f"{Summary_Dir}/{symbol}_summary.csv", index=False)
+        summary_df.to_csv(f"{Summary_Dir}/{symbol}_summary_{from_date}_to_{to_date}.csv", index=False)
 
         return total_charges_paid, trades  # Return the total charges paid and trades for this stock
 
@@ -606,6 +631,8 @@ if __name__ == "__main__":
     # Access sections and keys
     from_date = str(config['time_management']['from_date'])
     to_date = str(config['time_management']['to_date'])
+    #from_date = datetime.strptime(config['time_management']['from_date'], '%Y-%m-%d').date()
+    #to_date = datetime.strptime(config['time_management']['to_date'], '%Y-%m-%d').date()
     year_wise = str(config['time_management']['year_wise'])
     year_wise = True if year_wise == 'true' else False
     capital = float(config['risk_management']['capital'])
@@ -640,15 +667,35 @@ if __name__ == "__main__":
     # Initialize total charges variable
     total_charges_for_all_stocks = 0
 
-    for count, stock in enumerate(stocks, 1):
-        print(f"Processing stock {count}/{total_stocks}: {stock}")
-        # Call main function with parameters and aggregate total charges
-        charges_paid, trades = main(stock + ".NS", from_date, to_date, capital, target_percentage, stop_loss_percentage)
-        total_charges_for_all_stocks += charges_paid
+    if year_wise:
+        from_date = datetime.strptime(from_date, '%Y-%m-%d').date()
+        to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
+        start_year = from_date.year
+        end_year = to_date.year
+        for year in range(start_year, end_year + 1):
+            from_date = str(int(year))+'-'+'01-01'
+            to_date = str(int(year + 1)) + '-' + '12-31'
+            print(f"{from_date}----{to_date}")
+            #year_start_date = max(from_date, datetime.date(year, 1, 1))
+            #year_end_date = min(to_date, datetime.date(year, 12, 31))
+            for count, stock in enumerate(stocks, 1):
+                print(f"Processing stock {count}/{total_stocks}: {stock}")
+                # Call main function with parameters and aggregate total charges
+                charges_paid, trades = main(stock + ".NS", from_date, to_date, capital, target_percentage, stop_loss_percentage)
+                total_charges_for_all_stocks += charges_paid
+            # Call function to create the Master_no_Compound_sce_5.csv file
+            create_master_file(Summary_Dir)
+            print("Processing Consolidated Master File....")
+            process_files(Master_Dir)
+    else:
+        for count, stock in enumerate(stocks, 1):
+            print(f"Processing stock {count}/{total_stocks}: {stock}")
+            # Call main function with parameters and aggregate total charges
+            charges_paid, trades = main(stock + ".NS", from_date, to_date, capital, target_percentage, stop_loss_percentage)
+            total_charges_for_all_stocks += charges_paid
 
-    # Call function to create the Master_no_Compound_sce_5.csv file
-    create_master_file(Summary_Dir)
-
+        # Call function to create the Master_no_Compound_sce_5.csv file
+        create_master_file(Summary_Dir)
     # Print total charges paid for all stocks
     print(f"Total charges paid for all stocks: ₹{total_charges_for_all_stocks:.2f}")
     print("All stocks processed.")
