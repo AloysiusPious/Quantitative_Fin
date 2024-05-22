@@ -720,8 +720,8 @@ if __name__ == "__main__":
                 total_charges_for_all_stocks += charges_paid
             # Call function to create the Master_no_Compound_sce_5.csv file
             create_master_file(Summary_Dir)
-            print("Processing Consolidated Master File....")
-            process_files(Master_Dir)
+        print("Processing Consolidated Master File....")
+        process_files(Master_Dir)
     else:
         for count, stock in enumerate(stocks, 1):
             print(f"Processing stock {count}/{total_stocks}: {stock}")
