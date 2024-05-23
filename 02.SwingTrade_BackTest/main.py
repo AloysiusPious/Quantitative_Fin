@@ -15,16 +15,6 @@ def extract_date_range_from_filename(filename):
         return match.group(1), match.group(2)
     return None, None
 
-import os
-import pandas as pd
-import re
-
-def extract_date_range_from_filename(filename):
-    match = re.search(r'Master_(\d{4}-\d{2}-\d{2})_to_(\d{4}-\d{2}-\d{2})\.csv', filename)
-    if match:
-        return match.group(1), match.group(2)
-    return None, None
-
 def process_files(directory):
     final_data = []
 

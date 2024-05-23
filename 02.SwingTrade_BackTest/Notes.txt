@@ -1,1 +1,31 @@
 bolingerband + MACD stragegies from Medium
+
+5% Target / 25 % StopLoss ==> 400%
+20% Target / 25 % StopLoss ==> 499.03 %
+Need to check below:
+25% Target / 25 % StopLoss ==>
+*****************************************************************
+
+[trade_symbol]
+#symbols_file = custom.txt
+#symbols_file = nifty_50.txt
+symbols_file = nifty_100.txt
+#symbols_file = nifty_200.txt
+#symbols_file = nifty_500.txt
+create_chart = false
+
+[time_management]
+from_date = 2015-01-01
+to_date = 2023-12-31
+year_wise = false
+
+[risk_management]
+capital = 1000000
+no_of_stock_to_trade = 10
+compound = true
+target_percentage = 20
+stop_loss_percentage = 25
+charges_percentage = 0.2
+
+[house_keeping]
+cleanup_logs = true
