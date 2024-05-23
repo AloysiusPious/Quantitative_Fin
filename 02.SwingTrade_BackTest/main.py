@@ -54,9 +54,9 @@ def process_files(directory):
         'Winning Trade Percentage': round((final_df['No of Winning Trade'].sum() / final_df['Total Trades'].sum()) * 100, 2) if final_df['Total Trades'].sum() > 0 else 0,
         'Losing Trade Percentage': round((final_df['No of Losing Trade'].sum() / final_df['Total Trades'].sum()) * 100, 2) if final_df['Total Trades'].sum() > 0 else 0,
         'Total Profit': final_df['Total Profit'].sum(),
-        'Total Cumulative Return Percentage': final_df['Total Cumulative Return Percentage'].mean(),
+        'Total Cumulative Return Percentage': round_to_nearest_five_cents(final_df['Total Cumulative Return Percentage'].mean()),
         'Total Charges Paid': final_df['Total Charges Paid'].sum(),
-        'Profit After Charges': final_df['Profit After Charges'].sum(),
+        'Profit After Charges': round_to_nearest_five_cents(final_df['Profit After Charges'].sum()),
         'Profit Percentage After Charges': round_to_nearest_five_cents(final_df['Profit Percentage After Charges'].mean()),
         'Total Charges Percentage': round_to_nearest_five_cents(final_df['Total Charges Percentage'].mean())
     }
@@ -707,9 +707,10 @@ if __name__ == "__main__":
         to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
         start_year = from_date.year
         end_year = to_date.year
-        for year in range(start_year, end_year):
+        for year in range(start_year, end_year + 1):
+            print(year)
             from_date = str(int(year))+'-'+'01-01'
-            to_date = str(int(year + 1)) + '-' + '12-31'
+            to_date = str(int(year)) + '-' + '12-31'
             print(f"{from_date}----{to_date}")
             #year_start_date = max(from_date, datetime.date(year, 1, 1))
             #year_end_date = min(to_date, datetime.date(year, 12, 31))
