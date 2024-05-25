@@ -1,0 +1,11 @@
+pandas as pd
+yfinance as yf
+talib as ta
+os
+numpy
+configparser
+shutil
+glob
+matplotlib
+datetime
+re
