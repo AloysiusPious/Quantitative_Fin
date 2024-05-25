@@ -9,6 +9,40 @@ import glob
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, time
 import re
+
+def draw_down_chart():
+    all_trades = []
+    for filename in os.listdir(Reports_Dir):
+        if filename.endswith(".csv"):
+            filepath = os.path.join(Reports_Dir, filename)
+            df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
+            all_trades.append(df)
+    all_trades = pd.concat(all_trades, ignore_index=True)
+    all_trades = all_trades.sort_values(by='Buy Date')
+    # Calculate cumulative profit
+    all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
+    # Calculate capital over time
+    all_trades['Capital'] = capital + all_trades['Cumulative Profit']
+    plt.figure(figsize=(14, 7))
+    plt.plot(all_trades['Buy Date'], all_trades['Capital'], marker='', linestyle='-', color='b',
+             label='Capital Over Time')
+    # Annotate initial capital and final capital
+    plt.annotate(f'Start: ₹{capital}', xy=(all_trades['Buy Date'].iloc[0], capital),
+                 xytext=(all_trades['Buy Date'].iloc[0], capital),
+                 arrowprops=dict(facecolor='green', shrink=0.05))
+    plt.annotate(f'End: ₹{all_trades["Capital"].iloc[-1]:.2f}',
+                 xy=(all_trades['Buy Date'].iloc[-1], all_trades['Capital'].iloc[-1]),
+                 xytext=(all_trades['Buy Date'].iloc[-1], all_trades['Capital'].iloc[-1]),
+                 arrowprops=dict(facecolor='red', shrink=0.05))
+    plt.title('Capital Growth Over Time')
+    plt.xlabel('Date')
+    plt.ylabel('Capital (₹)')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(f'{Charts_Dir}/capital_drawdown.png')
+    plt.close()
+    #plt.show()
 def extract_date_range_from_filename(filename):
     match = re.search(r'Master_(\d{4}-\d{2}-\d{2})_to_(\d{4}-\d{2}-\d{2})\.csv', filename)
     if match:
@@ -201,19 +235,16 @@ def volume_increase(data,i):
         return True
     else:
         return False
-def volume_increase_and_open_below_yday_close(data, i):
+def yday_unusual_volume(data, i):
     # Ensure there's enough data for the calculations
     if i < 19:
         return False
-
     # Calculate the 20-day moving average of the volume for the entire DataFrame
     data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
     volume_avg = data.iloc[i - 20:i]['Volume'].mean()
     # Check if yesterday's volume was at least 50% higher than the 20-day average
     if volume_avg * 1.5 < data.iloc[i - 1]['Volume']:
-        # Check if today's open is less than yesterday's close
-        if data.iloc[i]['Open'] < data.iloc[i - 1]['Close']:
-            return True
+        return True
 
     return False
 def volume_increase_and_retracement(data, i):
@@ -347,6 +378,27 @@ def citadel(data):
             return True
 
 
+def yday_close_less_than_highest_close(data, i):
+    if i < 1:  # Ensure there is at least one previous day to compare
+        return False
+    # Calculate the 7-day EMA
+    data['7EMA'] = data['Close'].ewm(span=7, adjust=False).mean()
+    # Check if index is not integer-based and reset it if necessary
+    if isinstance(data.index, pd.DatetimeIndex):
+        data = data.reset_index()
+    # Find the previous highest close which was above the 7EMA
+    previous_highs = data.loc[:i-1]
+    highest_close_above_7ema = previous_highs[previous_highs['Close'] > previous_highs['7EMA']]['Close'].max()
+    if pd.isna(highest_close_above_7ema):  # Check if there is no previous high above 7EMA
+        return False
+    # Calculate 5% less than the highest close
+    target_value = highest_close_above_7ema * 0.95
+    # Check if yesterday's close is 5% less than the highest close
+    if data.loc[i, 'Close'] < target_value:
+        return True
+    else:
+        return False
+
 # Replace the existing volume_increase function with the nr7_breakout function
 def nr7_breakout(data, i):
     # Ensure there are enough data points to compare
@@ -474,6 +526,8 @@ def macd_cross(data, i):
     # Return None if no crossover is detected
     return None
 
+
+
 def check_buy_conditions(data, capital, capital_per_stock, target_percentage, stop_loss_percentage,):
     #total_charges_percentage = 0.2
     trade = None
@@ -499,26 +553,42 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             is_close_below_20EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_20']
             is_close_above_20EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_20']
             is_close_above_7EMA = data.iloc[i]['Close'] > data.iloc[i]['EMA_7']
-            yday_close_above_7EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_7']
+
             is_close_below_7EMA = data.iloc[i]['Close'] < data.iloc[i]['EMA_7']
             is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
             is_50EMA_below_200EMA = data.iloc[i]['EMA_50'] < data.iloc[i]['EMA_200']
             is_20EMA_below_50EMA = data.iloc[i]['EMA_20'] < data.iloc[i]['EMA_50']
+            ##########Yesterday #######
+            yday_close_above_7EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_7']
+            yday_close_above_200EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_200']
+            yday_close_below_20EMA = data.iloc[i - 1]['Close'] < data.iloc[i - 1]['EMA_20']
+            yday_close_above_20EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_20']
+            yday_close_above_7EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_7']
+            yday_close_above_7EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_7']
+            yday_close_below_7EMA = data.iloc[i - 1]['Close'] < data.iloc[i - 1]['EMA_7']
+            yday_rsi_above = pd_rsi_above_n(data, i, 14, 30)
+            yday_7EMA_above_20EMA = data.iloc[i - 1]['EMA_7'] > data.iloc[i - 1]['EMA_20']
+            ############################
             is_current_open_less_than_previous_close = data.iloc[i]['Open'] < data.iloc[i - 1]['Close']
             rsi_above = pd_rsi_above_n(data, i, 14, 30)
             rsi_cross = pd_rsi_cross_n(data, i, 14, 30)
             rsi_below = pd_rsi_below_n(data, i, 14, 30)
             macd_signal = macd_cross(data, i)
+            is_open_below_yday_close = data.iloc[i]['Open'] < data.iloc[i - 1]['Close']
+            is_tday_high_break_yday_high = data.iloc[i]['High'] > data.iloc[i - 1]['High']
+            ######
+            is_20day_b4_close_above_7EMA = data.iloc[i - 20]['Close'] > data.iloc[i - 20]['EMA_7']
             # Define your conditions
             sce_1 = volume_increase(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA and is_current_green # Good One with Compound
             sce_2 = volume_increase(data, i) and is_close_above_7EMA and is_50EMA_above_200EMA and is_current_green #***** 266.23 with no Compounding 300+ trades
             sce_3 = volume_increase(data, i) and is_close_below_7EMA and is_50EMA_above_200EMA and is_current_green  # *****  196.49 with no Compounding 230 Trades
             sce_4 = volume_increase(data, i) and data.iloc[i]['Close'] < data.iloc[i]['EMA_200'] #***** no Compounding
-            sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i, 14,40) and is_current_green #***** No Compunding 285% without Green/ with Green 216%
+            sce_5 = volume_increase(data, i) and pd_rsi_below_n(data, i - 1, 14,40) and is_current_green #***** No Compunding 285% without Green/ with Green 216%
             sce_6 = nr7_breakout(data, i) and is_20EMA_below_50EMA and is_50EMA_above_200EMA #**** 90 % Accuracy, no of Stock to Trade n/2
             sce_7 = volume_increase_and_retracement(data, i) and is_50EMA_above_200EMA
             ###bought_price Should be Yesterday High for sce_8==>(bought_price = round(data.iloc[i]['Close'], 2))
-            sce_8 = data.iloc[i]['High'] > data.iloc[i - 1]['High'] and volume_increase_and_open_below_yday_close(data, i) and yday_close_above_7EMA and is_50EMA_above_200EMA and is_previous_green
+            sce_8 = is_tday_high_break_yday_high and yday_unusual_volume(data, i) and is_open_below_yday_close and yday_close_above_7EMA and is_50EMA_above_200EMA and is_previous_green
+            sce_9 = yday_close_less_than_highest_close(data, i) and yday_unusual_volume(data, i) and is_tday_high_break_yday_high and is_open_below_yday_close and is_50EMA_above_200EMA and is_previous_green
             if sce_8:
                 buy_date = data.index[i].date()
                 ##Only for Sce_8
@@ -559,27 +629,16 @@ def check_buy_conditions(data, capital, capital_per_stock, target_percentage, st
             # Calculate charges for selling
             sell_charges = (total_charges_percentage / 100) * sell_turnover
             total_charges_paid += round_to_nearest_five_cents(sell_charges)
-
             trade['Exited Date'] = sell_date
             trade['Profit Amount'] = round_to_nearest_five_cents(profit_amount - buy_charges - sell_charges)
             trades.append(trade)
             trade = None
-
             if compound:
                 capital_per_stock += int(profit_amount)
-
-        capital_history.append(capital)
-        max_capital = max(capital_history)
-        drawdown = (max_capital - capital) / max_capital
-        drawdown_history.append(drawdown)
-
     if create_chart:
         visualize(data, 'Target Level', 'Stop Loss Level', stock, Charts_Dir)
-
     # Print total charges paid for the entire trade
-
     return trades, total_charges_paid
-
 
 def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_percentage):
     try:
@@ -588,34 +647,29 @@ def main(symbol, start_date, end_date, capital, target_percentage, stop_loss_per
         if data.empty:
             print(f"No data found for {symbol}. Skipping...")
             return 0, 0  # Skip this stock and return 0 charges and 0 trades
-
         # Calculate EMA
         data = calculate_ema(data, 200)
         data = calculate_ema(data, 50)
         data = calculate_ema(data, 20)
         data = calculate_ema(data, 7)
-
         # Calculate capital per stock
         capital_per_stock = round(capital / no_of_stock_to_trade, 2)
-
         # Check buying conditions and track trades
         trades, total_charges_paid = check_buy_conditions(data, capital, capital_per_stock, target_percentage, stop_loss_percentage)
         if not trades:
             print(f"No trades found for {symbol}. Skipping...")
             return total_charges_paid, trades  # Return charges paid, even if no trades found
-
         # Calculate No of holding Days
         df = pd.DataFrame(trades)
         df['Buy Date'] = pd.to_datetime(df['Buy Date'])  # Convert Buy Date to datetime format
         df['Exited Date'] = pd.to_datetime(df['Exited Date'])  # Convert Exited Date to datetime format
         df['No of holding Days'] = round((df['Exited Date'] - df['Buy Date']).dt.days, 2)  # Calculate holding days
-
         # Calculate Profit %
         df['Profit %'] = round((df['Profit Amount'] / df['Invested Amount']) * 100, 2)
-
         # Save DataFrame to CSV with Bought Price field
         df.to_csv(f"{Reports_Dir}/{symbol}_trades_{from_date}_to_{to_date}.csv", index=False)
-
+        print("Creating Draw-Down Chart.....")
+        draw_down_chart()
         # Create summary DataFrame
         summary_df = pd.DataFrame({
             'Total Trades': [len(trades)],
@@ -721,6 +775,7 @@ if __name__ == "__main__":
             total_charges_for_all_stocks += charges_paid
         # Call function to create the Master_no_Compound_sce_5.csv file
         create_master_file(Summary_Dir)
+
     # Print total charges paid for all stocks
     print(f"Total charges paid for all stocks: ₹{total_charges_for_all_stocks:.2f}")
     print("All stocks processed.")
