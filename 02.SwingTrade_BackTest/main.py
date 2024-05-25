@@ -714,6 +714,7 @@ if __name__ == "__main__":
     #to_date = datetime.strptime(config['time_management']['to_date'], '%Y-%m-%d').date()
     year_wise = str(config['time_management']['year_wise'])
     year_wise = True if year_wise == 'true' else False
+    year_split = int(config['time_management']['year_split'])
     capital = float(config['risk_management']['capital'])
     no_of_stock_to_trade = int(config['risk_management']['no_of_stock_to_trade'])
     compound = str(config['risk_management']['compound'])
@@ -742,19 +743,20 @@ if __name__ == "__main__":
     print(f"Total number of stocks: {total_stocks}")
     # Initialize lists to store summarized information
     summary_data = []
-
+    end_year_c = 0
     # Initialize total charges variable
     total_charges_for_all_stocks = 0
-
     if year_wise:
         from_date = datetime.strptime(from_date, '%Y-%m-%d').date()
         to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
         start_year = from_date.year
         end_year = to_date.year
-        for year in range(start_year, end_year + 1):
-            print(year)
-            from_date = str(int(year))+'-'+'01-01'
-            to_date = str(int(year)) + '-' + '12-31'
+        mult = round((end_year - start_year) / year_split)
+        #print((end_year - start_year))
+        #print(mult)
+        while end_year_c < mult:
+            from_date = str(int(start_year))+'-'+'01-01'
+            to_date = str(int(start_year + (year_split - 1))) + '-' + '12-31'
             print(f"{from_date}----{to_date}")
             #year_start_date = max(from_date, datetime.date(year, 1, 1))
             #year_end_date = min(to_date, datetime.date(year, 12, 31))
@@ -765,6 +767,10 @@ if __name__ == "__main__":
                 total_charges_for_all_stocks += charges_paid
             # Call function to create the Master_no_Compound_sce_5.csv file
             create_master_file(Summary_Dir)
+            start_year= start_year + year_split
+            to_date = start_year + year_split
+            end_year_c = end_year_c + 1
+
         print("Processing Consolidated Master File....")
         process_files(Master_Dir)
     else:

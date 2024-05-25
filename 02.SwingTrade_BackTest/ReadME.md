@@ -1,3 +1,5 @@
+Sure, here's a detailed `README.md` file for the provided Python trading script:
+
 ```markdown
 # Trading Strategy Backtesting
 

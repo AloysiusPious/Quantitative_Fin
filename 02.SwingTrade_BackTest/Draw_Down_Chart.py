@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import configparser
 
 def read_and_process_csv(filepath):
     df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
@@ -55,6 +56,32 @@ def main(directory, initial_capital):
     plot_profit_trend(all_trades, initial_capital)
 
 if __name__ == "__main__":
-    directory = 'nifty_100_Reports_2016-01-01_to_2020-12-31'  # Change this to your directory containing the .csv files
-    initial_capital = 1000000  # Initial capital
-    main(directory, initial_capital)
+    # Create a ConfigParser object
+    config = configparser.ConfigParser()
+    # Read the cfg file
+    config.read('config.cfg')
+    symbols_file = str(config['trade_symbol']['symbols_file'])
+    create_chart = str(config['trade_symbol']['create_chart'])
+    create_chart = True if create_chart == 'true' else False
+    # Access sections and keys
+    from_date = str(config['time_management']['from_date'])
+    to_date = str(config['time_management']['to_date'])
+    #from_date = datetime.strptime(config['time_management']['from_date'], '%Y-%m-%d').date()
+    #to_date = datetime.strptime(config['time_management']['to_date'], '%Y-%m-%d').date()
+    year_wise = str(config['time_management']['year_wise'])
+    year_wise = True if year_wise == 'true' else False
+    year_split = int(config['time_management']['year_split'])
+    capital = float(config['risk_management']['capital'])
+    no_of_stock_to_trade = int(config['risk_management']['no_of_stock_to_trade'])
+    compound = str(config['risk_management']['compound'])
+    compound = True if compound == 'true' else False
+    target_percentage = float(config['risk_management']['target_percentage'])
+    stop_loss_percentage = float(config['risk_management']['stop_loss_percentage'])
+    total_charges_percentage = float(config['risk_management']['charges_percentage'])
+
+    symbols_type = symbols_file.split('.')[0]
+    Reports_Dir = f'{symbols_type}_Reports_{from_date}_to_{to_date}'
+    Charts_Dir = f'{symbols_type}_Charts_{from_date}_to_{to_date}'
+    Summary_Dir = f'{symbols_type}_Summary_{from_date}_to_{to_date}'
+    Master_Dir = f'{symbols_type}_Master_{from_date}_to_{to_date}'
+    main(Reports_Dir, capital)
