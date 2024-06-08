@@ -9,8 +9,72 @@ import glob
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, time
 import re
+def get_nifty50_data():
+    # Fetch Nifty 50 data within the specified date range
+    nifty50 = yf.Ticker("^NSEI")
+    nifty50_data = nifty50.history(start=from_date, end=to_date)
+    return nifty50_data
+
 
 def draw_down_chart():
+    all_trades = []
+    for filename in os.listdir(Reports_Dir):
+        if filename.endswith(".csv"):
+            filepath = os.path.join(Reports_Dir, filename)
+            df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
+            all_trades.append(df)
+    all_trades = pd.concat(all_trades, ignore_index=True)
+    all_trades = all_trades.sort_values(by='Buy Date')
+
+    # Calculate cumulative profit
+    all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
+
+    # Calculate capital over time
+    all_trades['Capital'] = capital + all_trades['Cumulative Profit']
+
+    # Fetch Nifty 50 data within the specified date range
+    nifty50_data = get_nifty50_data()
+
+    # Calculate the percentage increase
+    final_capital = all_trades['Capital'].iloc[-1]
+    percentage_increase = ((final_capital - capital) / capital) * 100
+
+    # Create a figure and a set of subplots
+    fig, ax1 = plt.subplots(figsize=(14, 7))
+
+    # Plotting the capital growth
+    ax1.plot(all_trades['Buy Date'], all_trades['Capital'], marker='', linestyle='-', color='b',
+             label='Capital Over Time')
+    ax1.annotate(f'Start: ₹{capital}', xy=(all_trades['Buy Date'].iloc[0], capital),
+                 xytext=(all_trades['Buy Date'].iloc[0], capital),
+                 arrowprops=dict(facecolor='green', shrink=0.05))
+    ax1.annotate(f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
+                 xy=(all_trades['Buy Date'].iloc[-1], final_capital),
+                 xytext=(all_trades['Buy Date'].iloc[-1], final_capital),
+                 arrowprops=dict(facecolor='red', shrink=0.05))
+
+    # Set labels for the first y-axis
+    ax1.set_xlabel('Date')
+    ax1.set_ylabel('Capital (₹)', color='b')
+    ax1.tick_params(axis='y', labelcolor='b')
+    ax1.legend(loc='upper left')
+
+    # Create a second y-axis to plot the Nifty 50 index
+    ax2 = ax1.twinx()
+    ax2.plot(nifty50_data.index, nifty50_data['Close'], linestyle='--', color='orange', label='Nifty 50')
+    ax2.set_ylabel('Nifty 50 Index', color='orange')
+    ax2.tick_params(axis='y', labelcolor='orange')
+    ax2.legend(loc='upper center')
+
+    # Add grid, title, and layout settings
+    plt.title('Capital Growth Over Time and Nifty 50 Index')
+    fig.tight_layout()
+    plt.grid(True)
+    plt.savefig(f'{Charts_Dir}/capital_drawdown_with_nifty50.png')
+    #plt.show()
+
+
+def draw_down_chart_1():
     all_trades = []
     for filename in os.listdir(Reports_Dir):
         if filename.endswith(".csv"):
@@ -23,6 +87,8 @@ def draw_down_chart():
     all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
     # Calculate capital over time
     all_trades['Capital'] = capital + all_trades['Cumulative Profit']
+    final_capital = all_trades['Capital'].iloc[-1]
+    percentage_increase = ((final_capital - capital) / capital) * 100
     plt.figure(figsize=(14, 7))
     plt.plot(all_trades['Buy Date'], all_trades['Capital'], marker='', linestyle='-', color='b',
              label='Capital Over Time')
@@ -94,7 +160,7 @@ def process_files(directory):
 
 def create_directory(symbols_type):
     directories_to_create = [f'Reports_{from_date}_to_{to_date}', f'Charts_{from_date}_to_{to_date}',
-                             f'Summary_{from_date}_to_{to_date}', f'Master_{from_date}_to_{to_date}']
+                             f'Summary_{from_date}_to_{to_date}', f'Master_{from_date}_to_{to_date}', f'Cvs_Data_{from_date}_to_{to_date}']
     # Iterate over each directory and create it if it does not exist
     for directory in directories_to_create:
         directory_name = symbols_type + "_" + directory
@@ -235,7 +301,22 @@ def volume_increase(data,i):
         return True
     else:
         return False
+
+
 def yday_unusual_volume(data, i):
+    # Ensure there's enough data for the calculations
+    if i < 20:
+        return False
+
+    # Calculate the 20-day moving average of the volume for the entire DataFrame
+    data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
+
+    # Check if yesterday's volume was at least 50% higher than the 20-day average up to 1 day ago
+    if data.iloc[i - 1]['Volume'] > data.iloc[i - 1]['20d_avg_volume'] * 1.5 and data.iloc[i - 1]['Volume'] > data.iloc[i - 2]['Volume']:
+        return True
+
+    return False
+def yday_unusual_volume_old(data, i):
     # Ensure there's enough data for the calculations
     if i < 19:
         return False
@@ -243,7 +324,7 @@ def yday_unusual_volume(data, i):
     data['20d_avg_volume'] = data['Volume'].rolling(window=20).mean()
     volume_avg = data.iloc[i - 20:i]['Volume'].mean()
     # Check if yesterday's volume was at least 50% higher than the 20-day average
-    if volume_avg * 1.5 < data.iloc[i - 1]['Volume']:
+    if volume_avg * 1.5 < data.iloc[i - 1]['Volume'] and data.iloc[i - 1]['Volume'] > data.iloc[i - 2]['Volume']:
         return True
 
     return False
@@ -286,13 +367,6 @@ def round_to_nearest_five_cents(value):
     formatted_value = np.format_float_positional(rounded_value, precision=2, trim='-')
     return float(formatted_value)
 # Define function to fetch Yahoo Finance data
-def fetch_yahoo_finance_data(symbol, start_date, end_date):
-    data = yf.download(symbol, start=start_date, end=end_date)
-    col = ['Open', 'High', 'Low', 'Close', 'Adj Close']
-    data = convert_col_digit(data, col)
-    return data
-# Define function to fetch Yahoo Finance data
-# Define function to calculate EMA using pandas
 def calculate_ema(data, ema_period):
     data['EMA_' + str(ema_period)] = data['Close'].rolling(window=ema_period).mean()
     return data
@@ -537,12 +611,16 @@ def check_target_stop_loss_trades(data, capital_per_stock, target_percentage, st
     for i in range(100, len(data)):  # Start from the 100th day to have enough data for calculations
         if not trade and data.index[i].date() >= datetime.strptime(from_date, '%Y-%m-%d').date():
             is_previous_green = (data.iloc[i - 1]['Close'] > data.iloc[i - 1]['Open'])
+
+            is_current_red = (data.iloc[i]['Close'] < data.iloc[i]['Open'])
             is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
             yday_close_above_7EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_7']
             is_open_below_yday_close = data.iloc[i]['Open'] < data.iloc[i - 1]['Close']
             is_tday_high_break_yday_high = data.iloc[i]['High'] > data.iloc[i - 1]['High']
             ######
-            sce_1 = is_tday_high_break_yday_high and yday_unusual_volume(data, i) and is_open_below_yday_close and yday_close_above_7EMA and is_50EMA_above_200EMA and is_previous_green
+            #sce_1 = is_tday_high_break_yday_high and yday_unusual_volume(data, i) and is_open_below_yday_close and yday_close_above_7EMA and is_50EMA_above_200EMA and is_previous_green
+            sce_1 = is_previous_green and is_50EMA_above_200EMA and yday_close_above_7EMA and yday_unusual_volume(data, i) and is_tday_high_break_yday_high and is_open_below_yday_close
+
             if sce_1:
                 buy_date = data.index[i].date()
                 bought_price = round_to_nearest_five_cents(data.iloc[i - 1]['High'])
@@ -597,7 +675,7 @@ def check_target_stop_loss_trades(data, capital_per_stock, target_percentage, st
     #print(len(trades))
     #print(num_buy_signals)
     if len(trades) != num_buy_signals:
-        data.to_csv(f"csv_data/{stock}_data.csv")
+        data.to_csv(f"{cvs_data_dir}/{stock}_data.csv")
         data, trades, total_charges_paid_cl = get_last_unclosed_trade(data, trades, capital_per_stock, total_charges_paid)
         total_charges_paid = total_charges_paid_cl + total_charges_paid
     return trades, total_charges_paid
@@ -740,6 +818,8 @@ if __name__ == "__main__":
     Charts_Dir = f'{symbols_type}_Charts_{from_date}_to_{to_date}'
     Summary_Dir = f'{symbols_type}_Summary_{from_date}_to_{to_date}'
     Master_Dir = f'{symbols_type}_Master_{from_date}_to_{to_date}'
+    cvs_data_dir = f'{symbols_type}_Cvs_Data_{from_date}_to_{to_date}'
+
     ##############
     create_directory(symbols_type)
 
