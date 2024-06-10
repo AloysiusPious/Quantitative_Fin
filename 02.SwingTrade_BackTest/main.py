@@ -72,6 +72,25 @@ def draw_down_chart():
     plt.grid(True)
     plt.savefig(f'{Charts_Dir}/capital_drawdown_with_nifty50.png')
     #plt.show()
+    plt.close()
+def macd_ema_200_yesterday(stock_data, i):
+    # Calculate EMA 200 for yesterday and the day before yesterday
+    ema_200 = stock_data['Adj Close'].ewm(span=200, adjust=False).mean()
+    ema_200_yesterday = ema_200.iloc[i - 1]
+    ema_200_day_before_yesterday = ema_200.iloc[i - 2]
+
+    # Calculate MACD for yesterday
+    short_ema = stock_data['Adj Close'].ewm(span=12, adjust=False).mean()
+    long_ema = stock_data['Adj Close'].ewm(span=26, adjust=False).mean()
+    macd_line = short_ema - long_ema
+    macd_line_yesterday = macd_line.iloc[i - 1]
+    signal_line_yesterday = macd_line.ewm(span=9, adjust=False).mean().iloc[i - 1]
+    macd_histogram_yesterday = macd_line_yesterday - signal_line_yesterday
+
+    # Calculate buy signal for yesterday
+    buy_signal_yesterday = (macd_line_yesterday > signal_line_yesterday) & (macd_line_yesterday < 0) & (ema_200_yesterday > ema_200_day_before_yesterday)
+    return buy_signal_yesterday
+
 
 
 def draw_down_chart_1():
@@ -620,8 +639,8 @@ def check_target_stop_loss_trades(data, capital_per_stock, target_percentage, st
             ######
             #sce_1 = is_tday_high_break_yday_high and yday_unusual_volume(data, i) and is_open_below_yday_close and yday_close_above_7EMA and is_50EMA_above_200EMA and is_previous_green
             sce_1 = is_previous_green and is_50EMA_above_200EMA and yday_close_above_7EMA and yday_unusual_volume(data, i) and is_tday_high_break_yday_high and is_open_below_yday_close
-
-            if sce_1:
+            sce_2 = macd_ema_200_yesterday(data, i) and is_previous_green and is_tday_high_break_yday_high and is_open_below_yday_close
+            if sce_2:
                 buy_date = data.index[i].date()
                 bought_price = round_to_nearest_five_cents(data.iloc[i - 1]['High'])
                 quantity_bought = int(capital_per_stock / bought_price)
