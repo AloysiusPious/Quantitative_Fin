@@ -635,11 +635,17 @@ def check_target_stop_loss_trades(data, capital_per_stock, target_percentage, st
             is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
             yday_50EMA_above_200EMA = data.iloc[i - 1]['EMA_50'] > data.iloc[i - 1]['EMA_200']
             yday_close_above_7EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_7']
+            two_day_b4_close_below_7EMA = data.iloc[i - 2]['Close'] < data.iloc[i - 2]['EMA_7']
+            three_day_b4_close_below_7EMA = data.iloc[i - 3]['Close'] < data.iloc[i - 3]['EMA_7']
             is_open_below_yday_close = data.iloc[i]['Open'] < data.iloc[i - 1]['Close']
             is_tday_high_break_yday_high = data.iloc[i]['High'] > data.iloc[i - 1]['High']
+            ema7_break_for_first_time = yday_close_above_7EMA and two_day_b4_close_below_7EMA and three_day_b4_close_below_7EMA
             ######
-            sce_1 = is_previous_green and yday_50EMA_above_200EMA and yday_close_above_7EMA and yday_unusual_volume(data, i) and is_tday_high_break_yday_high and is_open_below_yday_close
-            if sce_1:
+            buy_today_cond = is_tday_high_break_yday_high and is_open_below_yday_close
+            sce_1 = buy_today_cond and is_previous_green and yday_50EMA_above_200EMA and yday_close_above_7EMA and yday_unusual_volume(data, i)
+            sce_2 = ema7_break_for_first_time and buy_today_cond and is_previous_green and yday_50EMA_above_200EMA and yday_unusual_volume(data, i)
+
+            if sce_2:
                 buy_date = data.index[i].date()
                 bought_price = round_to_nearest_five_cents(data.iloc[i - 1]['High'])
                 quantity_bought = int(capital_per_stock / bought_price)
