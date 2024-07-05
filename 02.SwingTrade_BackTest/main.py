@@ -625,7 +625,7 @@ def analyze_csv_files(provided_date):
     csv_files = [f for f in os.listdir(Reports_Dir) if f.endswith('.csv')]
 
     if len(csv_files) < no_of_stock_to_trade:
-        return True
+        return 0, True
 
     for csv_file in csv_files:
         file_path = os.path.join(Reports_Dir, csv_file)
@@ -640,8 +640,9 @@ def analyze_csv_files(provided_date):
         for i, row in data.iterrows():
             if row['Buy Date'] <= provided_date and (pd.isna(row['Exited Date']) or row['Exited Date'] > provided_date):
                 open_positions += 1
-
-    return open_positions < no_of_stock_to_trade
+    if open_positions > no_of_stock_to_trade:
+        print(f'Current Open Position more then {no_of_stock_to_trade} : {open_positions}')
+    return open_positions, open_positions < no_of_stock_to_trade
 
 def check_target_stop_loss_trades(data, capital_per_stock, target_percentage, stop_loss_percentage,):
     #total_charges_percentage = 0.2
@@ -675,10 +676,13 @@ def check_target_stop_loss_trades(data, capital_per_stock, target_percentage, st
             ######
             buy_today_cond = is_tday_high_break_yday_high and is_open_below_yday_close
             sce_1 = buy_today_cond and is_previous_green and yday_50EMA_above_200EMA and yday_close_above_7EMA and yday_unusual_volume(data, i)
-            sce_1_1 = buy_today_cond and is_previous_green and yday_20EMA_above_50EMA and ema7_break_for_first_time and yday_close_above_7EMA
+            sce_1_1 = buy_today_cond and is_previous_green and yday_20EMA_above_50EMA and ema7_break_for_first_time
             sce_1_2 = buy_today_cond and is_previous_green and yday_20EMA_above_50EMA and ema7_break_for_first_time and yday_unusual_volume(data, i)
 
-            if sce_1_1 and analyze_csv_files(data.index[i].date()):
+            if sce_1_1:
+                #open_positions, open_pos = analyze_csv_files(data.index[i].date())
+                #if open_pos:
+                #    print(f'Current Open Position : {open_positions}')
                 buy_date = data.index[i].date()
                 bought_price = round_to_nearest_five_cents(data.iloc[i - 1]['High'])
                 quantity_bought = int(capital_per_stock / bought_price)
