@@ -7,10 +7,19 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta, time
 import re
+def get_stock_for_date_refrence(cvs_data_dir, from_date, to_date):
+    print(f'Downloading stock for Date reference..')
+    nifty50_data = get_nifty50_data(from_date, to_date)
+    nifty50_data.reset_index(inplace=True)
+    nifty50_data.rename(columns={'index': 'Date'})
+    nifty50_data = nifty50_data[['Date']]
+    nifty50_data.to_csv(f"{cvs_data_dir}/stock_date_ref.csv", index=False, date_format='%Y-%m-%d')
+    print(f'Ok.')
 def get_nifty50_data(from_date, to_date):
     # Fetch Nifty 50 data within the specified date range
-    #nifty50 = yf.Ticker("^NSEI")
-    nifty50_data = yf.download("TCS.NS", start=from_date, end=to_date)
+    #nifty50_data = yf.Ticker("^NSEI")
+    nifty50_data = yf.download("^NSEI", start=from_date, end=to_date)
+    #print(nifty50_data)
     #nifty50_data = nifty50.history(start=from_date, end=to_date)
     return nifty50_data
 def fetch_yahoo_finance_data(symbol, start_date, end_date):
@@ -25,6 +34,24 @@ def fetch_yahoo_finance_data(symbol, start_date, end_date):
     col = ['Open', 'High', 'Low', 'Close', 'Adj Close']
 
     return data
+def create_directory(symbols_type, from_date, to_date):
+    directories_to_create = [f'Reports_{from_date}_to_{to_date}', f'Charts_{from_date}_to_{to_date}',
+                             f'Summary_{from_date}_to_{to_date}', f'Master_{from_date}_to_{to_date}', f'Cvs_Data_{from_date}_to_{to_date}', f'Raw_Data_{from_date}_to_{to_date}']
+    # Iterate over each directory and create it if it does not exist
+    for directory in directories_to_create:
+        directory_name = symbols_type + "_" + directory
+        if not os.path.exists(directory_name):
+            os.makedirs(directory_name)
+def remove_directory():
+    directories_to_remove = ["Reports", "Charts", "Summary", "Master"]
+    for directory in directories_to_remove:
+        for dir_path in glob.glob(f'*{directory}*'):
+            """Remove directory if it exists"""
+            if os.path.exists(dir_path):
+                shutil.rmtree(dir_path)
+                print(f"Directory '{dir_path}' removed successfully.")
+            else:
+                print(f"Directory '{dir_path}' not found.")
 def visualize_capital_and_drawdown(stock, Charts_Dir, capital_history, drawdown_history):
     plt.figure(figsize=(12, 6))
     # Plotting the capital history
@@ -57,7 +84,8 @@ def visualize(data, target_col, stop_loss_col, stock, Charts_Dir):
 
     plt.savefig(f'{Charts_Dir}/{stock}_plot.png')
     plt.close()
-
+def round_to_nearest_0_05(value):
+    return round(round(value * 20) / 20, 2)
 def remove_directory():
     directories_to_remove = ["Reports", "Charts", "Summary", "Master"]
     for directory in directories_to_remove:
@@ -137,10 +165,19 @@ def convert_specific_col_digit(data,column):
     for col in column:
         data[col] = data[col].apply(round_to_nearest_five_cents)
     return data
+def get_ref_stock_date(from_date, to_date):
+    ref_stock_data = yf.download("TCS.NS", start=from_date, end=to_date)
+    print(f'{cvs_data_dir} Data not found., Downloading...')
+    if not os.path.exists(cvs_data_dir):
+        os.makedirs(cvs_data_dir)
+    ref_stock_data.reset_index(inplace=True)
+    ref_stock_data.rename(columns={'index': 'Date'})
+    ref_stock_data = ref_stock_data[['Date']]
+    ref_stock_data.to_csv(f"{cvs_data_dir}/stock_date_ref.csv", index=False, date_format='%Y-%m-%d')
 def convert_all_col_digit(data):
     for col in data.columns:
         if col != 'Date' and data[col].dtype != 'object':  # Check if column is not string/object type
-            data[col] = data[col].apply(round_to_nearest_five_cents)
+            data.loc[:, col] = data[col].apply(round_to_nearest_five_cents)
     return data
 def extract_date_range_from_filename(filename):
     match = re.search(r'Master_(\d{4}-\d{2}-\d{2})_to_(\d{4}-\d{2}-\d{2})\.csv', filename)
