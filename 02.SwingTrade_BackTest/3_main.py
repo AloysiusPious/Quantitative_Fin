@@ -2,8 +2,8 @@ import configparser
 import pandas as pd
 import glob
 import os
+from matplotlib.offsetbox import AnchoredText
 from swing_util import *
-
 def draw_down_chart():
     all_trades = []
     for filename in os.listdir(Reports_Dir):
@@ -58,7 +58,81 @@ def draw_down_chart():
     plt.title('Capital Growth Over Time and Nifty 50 Index')
     fig.tight_layout()
     plt.grid(True)
-    plt.savefig(f'{Charts_Dir}/capital_drawdown_with_nifty50.png')
+
+    # Add the text box with the specified details
+    textstr = '\n'.join((
+        f'capital = {capital}',
+        f'no_of_stock_to_trade = {no_of_stock_to_trade}',
+        f'compound = {compound}',
+        f'target_percentage = {target_percentage}',
+        f'stop_loss_percentage = {stop_loss_percentage}'
+    ))
+
+    anchored_text = AnchoredText(textstr, loc='lower right', frameon=True, bbox_to_anchor=(1, 0), bbox_transform=ax1.transAxes)
+    anchored_text.patch.set_boxstyle("round,pad=0.5,rounding_size=0.5")
+    ax1.add_artist(anchored_text)
+
+    # Save the plot
+    plt.savefig(f'{Charts_Dir}/capital_drawdown_{from_date}_to_{to_date}.png')
+    plt.show()
+    plt.close()
+
+
+def draw_down_chart1():
+    all_trades = []
+    for filename in os.listdir(Reports_Dir):
+        if filename.endswith(".csv"):
+            filepath = os.path.join(Reports_Dir, filename)
+            df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
+            all_trades.append(df)
+    all_trades = pd.concat(all_trades, ignore_index=True)
+    all_trades = all_trades.sort_values(by='Buy Date')
+
+    # Calculate cumulative profit
+    all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
+
+    # Calculate capital over time
+    all_trades['Capital'] = capital + all_trades['Cumulative Profit']
+
+    # Fetch Nifty 50 data within the specified date range
+    nifty50_data = get_nifty50_data(from_date, to_date)
+
+    # Calculate the percentage increase
+    final_capital = all_trades['Capital'].iloc[-1]
+    percentage_increase = ((final_capital - capital) / capital) * 100
+
+    # Create a figure and a set of subplots
+    fig, ax1 = plt.subplots(figsize=(14, 7))
+
+    # Plotting the capital growth
+    ax1.plot(all_trades['Buy Date'], all_trades['Capital'], marker='', linestyle='-', color='b',
+             label='Capital Over Time')
+    ax1.annotate(f'Start: ₹{capital}', xy=(all_trades['Buy Date'].iloc[0], capital),
+                 xytext=(all_trades['Buy Date'].iloc[0], capital),
+                 arrowprops=dict(facecolor='green', shrink=0.05))
+    ax1.annotate(f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
+                 xy=(all_trades['Buy Date'].iloc[-1], final_capital),
+                 xytext=(all_trades['Buy Date'].iloc[-1], final_capital),
+                 arrowprops=dict(facecolor='red', shrink=0.05))
+
+    # Set labels for the first y-axis
+    ax1.set_xlabel('Date')
+    ax1.set_ylabel('Capital (₹)', color='b')
+    ax1.tick_params(axis='y', labelcolor='b')
+    ax1.legend(loc='upper left')
+
+    # Create a second y-axis to plot the Nifty 50 index
+    ax2 = ax1.twinx()
+    ax2.plot(nifty50_data.index, nifty50_data['Close'], linestyle='--', color='orange', label='Nifty 50')
+    ax2.set_ylabel('Nifty 50 Index', color='orange')
+    ax2.tick_params(axis='y', labelcolor='orange')
+    ax2.legend(loc='upper center')
+
+    # Add grid, title, and layout settings
+    plt.title('Capital Growth Over Time and Nifty 50 Index')
+    fig.tight_layout()
+    plt.grid(True)
+    plt.savefig(f'{Charts_Dir}/capital_drawdown_{symbols_type}_{from_date}_to_{to_date}.png')
     #plt.show()
     plt.close()
 def create_master_file(summary_dir, from_date, to_date, capital):

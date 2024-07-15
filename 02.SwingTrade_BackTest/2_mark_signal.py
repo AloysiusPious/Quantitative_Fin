@@ -35,38 +35,67 @@ def mark_signals(symbol, start_date, end_date, target_percentage, stop_loss_perc
         is_50EMA_above_200EMA = data.iloc[i]['EMA_50'] > data.iloc[i]['EMA_200']
         is_prev_close_below_200EMA = data.iloc[i - 1]['Close'] < data.iloc[i - 1]['EMA_200']
         yday_50EMA_above_200EMA = data.iloc[i - 1]['EMA_50'] > data.iloc[i - 1]['EMA_200']
+        yday_100EMA_above_200EMA = data.iloc[i - 1]['EMA_100'] > data.iloc[i - 1]['EMA_200']
         yday_20EMA_above_50EMA = data.iloc[i - 1]['EMA_20'] > data.iloc[i - 1]['EMA_50']
         two_prev_yday_20EMA_below_50EMA = data.iloc[i - 2]['EMA_20'] < data.iloc[i - 2]['EMA_50'] or data.iloc[i - 3]['EMA_20'] < data.iloc[i - 3]['EMA_50']
         yday_7EMA_below_20EMA = data.iloc[i - 1]['EMA_7'] < data.iloc[i - 1]['EMA_20']
         ###
         yday_close_above_7EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_7']
-        yday_close_below_7EMA = data.iloc[i - 1]['Close'] < data.iloc[i - 1]['EMA_7']
+        two_day_b4_close_above_7EMA = data.iloc[i - 2]['Close'] > data.iloc[i - 1]['EMA_7']
+
+
+        yday_open_below_7EMA = data.iloc[i - 1]['Open'] < data.iloc[i - 1]['EMA_7']
+        yday_close_above_20EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_20']
+        yday_open_below_20EMA = data.iloc[i - 1]['Open'] < data.iloc[i - 1]['EMA_20']
         ####
         yday_close_above_20EMA = data.iloc[i - 1]['Close'] > data.iloc[i - 1]['EMA_20']
-        two_day_b4_close_below_7EMA = data.iloc[i - 2]['Close'] < data.iloc[i - 2]['EMA_7']
-        three_day_b4_close_below_7EMA = data.iloc[i - 3]['Close'] < data.iloc[i - 3]['EMA_7']
-        four_day_b4_close_below_7EMA = data.iloc[i - 4]['Close'] < data.iloc[i - 4]['EMA_7']
-        five_day_b4_close_below_7EMA = data.iloc[i - 5]['Close'] < data.iloc[i - 5]['EMA_7']
+        #########
+        two_day_b4_close_below_7EMA = data.iloc[i - 2]['Close'] < data.iloc[i - 2]['EMA_20']
+        three_day_b4_close_below_7EMA = data.iloc[i - 3]['Close'] < data.iloc[i - 3]['EMA_20']
+        four_day_b4_close_below_7EMA = data.iloc[i - 4]['Close'] < data.iloc[i - 4]['EMA_20']
+        five_day_b4_close_below_7EMA = data.iloc[i - 5]['Close'] < data.iloc[i - 5]['EMA_20']
+        six_day_b4_close_below_7EMA = data.iloc[i - 6]['Close'] < data.iloc[i - 6]['EMA_20']
+        seven_day_b4_close_below_7EMA = data.iloc[i - 7]['Close'] < data.iloc[i - 7]['EMA_20']
+        ##########
+        #########
+        two_day_b4_ohlc_avg = (data.iloc[i - 2]['Open'] + data.iloc[i - 2]['High'] + data.iloc[i - 2]['Low'] + data.iloc[i - 2]['Close']) / 4
+        three_day_b4_ohlc_avg = (data.iloc[i - 3]['Open'] + data.iloc[i - 3]['High'] + data.iloc[i - 3]['Low'] + data.iloc[i - 3]['Close']) / 4
+        four_day_b4_ohlc_avg = (data.iloc[i - 4]['Open'] + data.iloc[i - 4]['High'] + data.iloc[i - 4]['Low'] + data.iloc[i - 4]['Close']) / 4
+        five_day_b4_ohlc_avg = (data.iloc[i - 5]['Open'] + data.iloc[i - 5]['High'] + data.iloc[i - 5]['Low'] + data.iloc[i - 5]['Close']) / 4
+        six_day_b4_ohlc_avg = (data.iloc[i - 6]['Open'] + data.iloc[i - 6]['High'] + data.iloc[i - 6]['Low'] + data.iloc[i - 6]['Close']) / 4
+        sevel_day_b4_ohlc_avg = (data.iloc[i - 7]['Open'] + data.iloc[i - 7]['High'] + data.iloc[i - 7]['Low'] + data.iloc[i - 7]['Close']) / 4
+        ##########
         is_open_below_yday_close = data.iloc[i]['Open'] < data.iloc[i - 1]['Close']
         is_tday_high_break_yday_high = data.iloc[i]['High'] > data.iloc[i - 1]['High']
-        ema7_break_for_first_time = yday_close_above_7EMA and (two_day_b4_close_below_7EMA or three_day_b4_close_below_7EMA or four_day_b4_close_below_7EMA or five_day_b4_close_below_7EMA)
+        #####
+        six_candle_below_EMA_7 = two_day_b4_close_below_7EMA and three_day_b4_close_below_7EMA and four_day_b4_close_below_7EMA and five_day_b4_close_below_7EMA \
+                                 and six_day_b4_close_below_7EMA and seven_day_b4_close_below_7EMA
+        six_candle_avg_below_EMA_7 = two_day_b4_ohlc_avg and three_day_b4_ohlc_avg and four_day_b4_ohlc_avg and five_day_b4_ohlc_avg \
+        and six_day_b4_ohlc_avg and sevel_day_b4_ohlc_avg
+        ######
+        yday_20EMA_gt_50EMA_gt_100EMA_gt_200EMA =  data.iloc[i - 1]['EMA_20'] > data.iloc[i - 1]['EMA_7'] and data.iloc[i - 1]['EMA_50'] > data.iloc[i - 1]['EMA_100'] \
+                and data.iloc[i - 1]['EMA_100'] > data.iloc[i - 1]['EMA_200'] and data.iloc[i - 2]['EMA_7'] < data.iloc[i - 2]['EMA_50'] and data.iloc[i - 3]['EMA_7'] < data.iloc[i - 3]['EMA_50']
         ######
         buy_today_cond = is_tday_high_break_yday_high and is_open_below_yday_close
         sce_1 = buy_today_cond and is_previous_green and yday_50EMA_above_200EMA and yday_close_above_7EMA
-        sce_2 = buy_today_cond and is_previous_green and is_prev_close_below_200EMA and yday_unusual_volume(data, i)
-        if sce_1:
+        sce_2 = buy_today_cond and is_previous_green and yday_100EMA_above_200EMA and six_candle_below_EMA_7 and yday_close_above_7EMA
+        sce_3 = buy_today_cond and is_previous_green and yday_100EMA_above_200EMA and six_candle_avg_below_EMA_7 and yday_close_above_7EMA
+        #sce_3 = buy_today_cond and is_previous_green and yday_50EMA_above_200EMA and yday_open_below_7EMA and yday_close_above_7EMA
+        #sce_4 = buy_today_cond and is_previous_green and yday_50EMA_above_200EMA and yday_open_below_20EMA and yday_close_above_20EMA
+        #sce_5 = buy_today_cond and is_previous_green and yday_20EMA_gt_50EMA_gt_100EMA_gt_200EMA and yday_close_above_7EMA
+        if sce_3:
             bought_price = round_to_nearest_0_05(data.iloc[i - 1]['High'])
             stop_loss = round_to_nearest_0_05(bought_price * (1 - stop_loss_percentage / 100))
             target = round_to_nearest_0_05(bought_price * (1 + target_percentage / 100))
             data.loc[data.index[i], 'Buy_Signal'] = round_to_nearest_0_05(data.iloc[i - 1]['High'])
             data.loc[data.index[i], 'Target'] = target
             data.loc[data.index[i], 'StopLoss'] = stop_loss
-    #data = data.loc[from_date:]
-    data = data.loc[data['Date'] >= from_date]
-    #print(data)
+    data = data.loc[from_date:]
+
     data = convert_all_col_digit(data)
-    #data.reset_index(drop=True, inplace=True)
-    data.to_csv(f"{cvs_data_dir}/{stock}.csv", index=False)
+    #data = data.loc[data['Date'] >= from_date]
+
+    data.to_csv(f"{cvs_data_dir}/{stock}.csv")
 
 # Read the configuration file
 config = configparser.ConfigParser()
