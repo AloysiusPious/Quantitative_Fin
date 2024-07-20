@@ -10,15 +10,20 @@ def mark_signals(symbol, start_date, end_date, target_percentage, stop_loss_perc
         print(f"{stock} Not found in local, downloading from online and processing it ...")
         # Fetch data from Yahoo Finance
         data = fetch_yahoo_finance_data(symbol, start_date, end_date)
-        data.to_csv(f"{cvs_raw_data}/{stock}.csv", index=False)
+        # Convert Date index to a normal column
+        data.reset_index(inplace=True)
+        # Rename the index column to 'Date'
+        data.rename(columns={'index': 'Date'}, inplace=True)
+        if data.empty:
+            print(f"No data found for {stock}. Skipping...")
+            return 0, 0  # Skip this stock and return 0 charges and 0 trades
+        data.to_csv(f"{cvs_raw_data}/{stock}.csv")
         print('---')
     else:
         print(f"{stock} found in local and processing it ...")
         data = pd.read_csv(f'{cvs_raw_data}/{stock}.csv')
         print('---')
-    if data.empty:
-        print(f"No data found for {stock}. Skipping...")
-        return 0, 0  # Skip this stock and return 0 charges and 0 trades
+
     # Calculate EMA
     data = calculate_ema(data, 200)
     data = calculate_ema(data, 50)
@@ -90,13 +95,16 @@ def mark_signals(symbol, start_date, end_date, target_percentage, stop_loss_perc
             data.loc[data.index[i], 'Buy_Signal'] = round_to_nearest_0_05(data.iloc[i - 1]['High'])
             data.loc[data.index[i], 'Target'] = target
             data.loc[data.index[i], 'StopLoss'] = stop_loss
-    data = data.loc[from_date:]
-
+    #data = data.loc[from_date:]
+    #print(data['Date'])
+    data = data.loc[data['Date'] >= from_date]
     data = convert_all_col_digit(data)
-    #data = data.loc[data['Date'] >= from_date]
-
-    data.to_csv(f"{cvs_data_dir}/{stock}.csv")
-
+    # Columns to keep
+    columns_to_keep = ['Date', 'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume',
+                       'EMA_200', 'EMA_50', 'EMA_100', 'EMA_20', 'EMA_7', 'Buy_Signal', 'Target', 'StopLoss']
+    # Keep only the specified columns
+    data = data.filter(columns_to_keep)
+    data.to_csv(f"{cvs_data_dir}/{stock}.csv", index=False)
 # Read the configuration file
 config = configparser.ConfigParser()
 config.read('config.cfg')
@@ -128,7 +136,10 @@ cvs_raw_data = f'{symbols_type}_Raw_Data_{from_date}_to_{to_date}'
 if cleanup_logs:
     remove_directory()
 create_directory(symbols_type, from_date, to_date)
-get_stock_for_date_refrence(cvs_data_dir, from_date, to_date)
+###
+file_list = [f'{cvs_raw_data}/stock_date_ref.csv']
+copy_specific_files(file_list, cvs_data_dir)
+###
 
 with open('./symbols/' + symbols_file, 'r') as file:
     stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]

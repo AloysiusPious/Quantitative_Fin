@@ -282,6 +282,8 @@ def read_stock_files():
 
 def process_date(date):
     global active_positions, capital_per_stock, final_capital
+    # Get the last date
+    last_date = date_ref_df['Date'].max()
     stock_files = read_stock_files()
     for stock_file in stock_files:
         stock_df = pd.read_csv(stock_file)
@@ -380,36 +382,34 @@ def process_date(date):
 
                         if compound:
                             capital_per_stock = final_capital / no_of_stock_to_trade
+        if date == last_date:
+            last_day_data = stock_df[stock_df['Date'] <= to_date].tail(1)
+            if not last_day_data.empty:
+                last_close_price = last_day_data.iloc[-1]['Close']
+                for position in active_positions:
+                    if position['symbol'] == symbol:
+                        profit_amount = (last_close_price - position['buy_price']) * position['shares']
+                        invested_amount = position['buy_price'] * position['shares']
+                        profit_percent = (profit_amount / invested_amount) * 100
+                        trade_report[symbol].append({
+                            'Buy Date': position['buy_date'],
+                            'Bought Price': round_to_nearest_0_05(position['buy_price']),
+                            'Quantity Bought': position['shares'],
+                            'Invested Amount': round_to_nearest_0_05(invested_amount),
+                            'Stop Loss': round_to_nearest_0_05(position['stop_loss_price']),
+                            'Target': round_to_nearest_0_05(position['target_price']),
+                            'Exited Date': last_day_data.iloc[-1]['Date'],
+                            'Exited Price': round_to_nearest_0_05(last_close_price),
+                            'Profit Amount': round_to_nearest_0_05(profit_amount),
+                            'Trade Status': 'LastDayClose',
+                            'No of holding Days': calculate_holding_days(position['buy_date'], last_day_data.iloc[-1]['Date']),
+                            'Profit %': round_to_nearest_0_05(profit_percent)
+                        })
+                        final_capital += profit_amount
+                        print(f"Sold {symbol} on {last_day_data.iloc[-1]['Date']} at {last_close_price} (Last day close)")
 
-            if date == to_date:
-                last_day_data = stock_df[stock_df['Date'] <= to_date].tail(1)
-                print(last_day_data)
-                if not last_day_data.empty:
-                    last_close_price = last_day_data.iloc[-1]['Close']
-                    for position in active_positions:
-                        if position['symbol'] == symbol:
-                            profit_amount = (last_close_price - position['buy_price']) * position['shares']
-                            invested_amount = position['buy_price'] * position['shares']
-                            profit_percent = (profit_amount / invested_amount) * 100
-                            trade_report[symbol].append({
-                                'Buy Date': position['buy_date'],
-                                'Bought Price': round_to_nearest_0_05(position['buy_price']),
-                                'Quantity Bought': position['shares'],
-                                'Invested Amount': round_to_nearest_0_05(invested_amount),
-                                'Stop Loss': round_to_nearest_0_05(position['stop_loss_price']),
-                                'Target': round_to_nearest_0_05(position['target_price']),
-                                'Exited Date': last_day_data.iloc[-1]['Date'],
-                                'Exited Price': round_to_nearest_0_05(last_close_price),
-                                'Profit Amount': round_to_nearest_0_05(profit_amount),
-                                'Trade Status': 'LastDayClose',
-                                'No of holding Days': calculate_holding_days(position['buy_date'], last_day_data.iloc[-1]['Date']),
-                                'Profit %': round_to_nearest_0_05(profit_percent)
-                            })
-                            final_capital += profit_amount
-                            print(f"Sold {symbol} on {last_day_data.iloc[-1]['Date']} at {last_close_price} (Last day close)")
-
-                            if compound:
-                                capital_per_stock = final_capital / no_of_stock_to_trade
+                        if compound:
+                            capital_per_stock = final_capital / no_of_stock_to_trade
 
 
 
