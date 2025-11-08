@@ -252,7 +252,6 @@ def fetch_yahoo_finance_data_02_NOV_2025(symbol, start_date, end_date):
     except Exception as e:
         print(f"Error fetching data for {symbol}: {e}")
         return None
-from kiteconnect import KiteConnect
 
 
 def fetch_kite_data(enctoken, symbol, start_date, end_date, interval='day'):
