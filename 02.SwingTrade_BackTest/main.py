@@ -486,13 +486,13 @@ def mark_signals(enctoken, symbol, start_date, end_date):
 
 
 
-    # --- Combine Buy Signal ---
+    # --- Combine and Buy Signal ---
     cond_buy = cond_close &  cond_near_low & cond_macd_turn & cond_rsi
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close'].round(2)
     #############################################
     #--- Targets and Stoploss ---
     data.loc[cond_buy, 'StopLoss'] = 0.0
-    data.loc[cond_buy, 'Target'] = data['Buy_Signal'] * 5
+    data.loc[cond_buy, 'Target'] = data['Buy_Signal'] * 10
     #############################################
     # stop_loss_pct = 10  # percent
     # data.loc[cond_buy, 'StopLoss'] = data['Low_5'] * (1 - stop_loss_pct / 100)
