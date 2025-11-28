@@ -439,57 +439,13 @@ def procee_final_report(Reports_Dir):
     if cleanup_logs:
         for log_file in glob.glob('*.log'):
             os.remove(log_file)
-def find_pivots(series, left=3, right=3):
-    pivots = []
-    for i in range(left, len(series)-right):
-        window = series[i-left:i+right+1]
-        if series[i] == window.min():
-            pivots.append(i)
-    return pivots
-
-
-def detect_reverse_head_shoulders(data):
-    lows = data['Low']
-    pivots = find_pivots(lows, left=3, right=3)
-
-    rhs_signal = pd.Series(False, index=data.index)
-
-    for i in range(2, len(pivots)):
-        ls = pivots[i-2]
-        h  = pivots[i-1]
-        rs = pivots[i]
-
-        cond1 = lows[h] < lows[ls]
-        cond2 = lows[h] < lows[rs]
-        cond3 = abs(lows[ls] - lows[rs]) < (0.04 * lows[h])   # shoulders equal ±4%
-        cond4 = ls < h < rs
-
-        if cond1 and cond2 and cond3 and cond4:
-
-            neckline = max(
-                data['High'][ls:h].max(),
-                data['High'][h:rs].max()
-            )
-
-            # breakout above neckline
-            breakout = data['Close'][rs:] > neckline
-            if breakout.any():
-                bidx = breakout.idxmax()
-                rhs_signal.loc[bidx] = True
-
-    return rhs_signal
-
-import os
-import pandas as pd
-import numpy as np
-import talib
 
 def mark_signals(enctoken, symbol, start_date, end_date):
     file_path = f'{cvs_raw_data}/{symbol}.csv'
 
-    # ---------------- Load or Download ----------------
     if not os.path.exists(file_path):
         print(f"{symbol} Not found locally — downloading ...")
+
         data = fetch_kite_data(enctoken, symbol, start_date, end_date, interval='day')
         if data is None or data.empty:
             print(f"No data for {symbol}")
@@ -499,55 +455,57 @@ def mark_signals(enctoken, symbol, start_date, end_date):
         print(f"{symbol} found in local and processing it ...")
         data = pd.read_csv(file_path)
 
-    # ---------------- Indicators ----------------
+    # --- Indicators ---
+    data['Low_252min'] = data['Low'].shift(1).rolling(window=252, min_periods=252).min()
+    # --- RSI ---
+    delta = data['Close'].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    data['RSI'] = 100 - (100 / (1 + rs))
+    cond_rsi = (data['RSI'] > 30) & (data['RSI'] < 60)
+    # --- MACD ---
+    ema12 = data['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = data['Close'].ewm(span=26, adjust=False).mean()
+    data['MACD_Line'] = ema12 - ema26
+    #data['MACD_Signal'] = data['MACD_Line'].ewm(span=9, adjust=False).mean()
+    #data['MACD_Slope'] = data['MACD_Line'].diff()
+    cond_macd_turn = (data['MACD_Line'] < 0) #& (data['MACD_Line'].diff() > 0)
 
-    # EMA
-    data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
-    cond_above_200ema = data['Close'] > data['EMA200']
 
-    # 6-month high breakout (~126 trading days)
-    data['High_126'] = data['High'].rolling(126).max()
-    cond_6m_breakout = data['Close'] > data['High_126'].shift(1)
+    # --- Conditions ---
+    # Calculate the lowest low of the past 5 days
+    data['Low_5'] = data['Low'].rolling(window=5).min()
+    # Condition: past 5 days lowest low near 252-day low
+    #tolerance = min(0.02, data['ATR'].iloc[-1] / data['Close'].iloc[-1])
+    tolerance = 0.015 # example: 1.5%
+    cond_near_low = (data['Low_5'] >= data['Low_252min']) & (data['Low_5'] <= data['Low_252min'] * (1 + tolerance))
 
-    # Volume spike (simple)
-    data['Vol_20'] = data['Volume'].rolling(20).mean()
-    cond_vol_spike = data['Volume'] > 1.5 * data['Vol_20']
+    # Optional: capture even if yesterday's close not above previous close
+    cond_close = data["Close"] > data["Low"].shift(1)  # close above yesterday’s low
 
-    # Candle body >50% of range
-    data['Body'] = (data['Close'] - data['Open']).abs()
-    data['Range'] = data['High'] - data['Low']
-    cond_strong_body = data['Body'] > 0.50 * data['Range']
 
-    # RSI
-    data['RSI'] = talib.RSI(data['Close'], timeperiod=14)
-    cond_rsi = data['RSI'] > 50
 
-    # Optional retest: 5% below breakout
-    retest_zone = 0.95
-    breakout_level = data['High_126']
-    cond_retest = (data['Low'] < breakout_level * 1.0) & (data['Low'] > breakout_level * retest_zone)
+    # --- Combine and Buy Signal ---
+    cond_buy = cond_close &  cond_near_low & cond_macd_turn & cond_rsi
+    data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close'].round(2)
+    #############################################
+    #--- Targets and Stoploss ---
+    data.loc[cond_buy, 'StopLoss'] = 0.0
+    data.loc[cond_buy, 'Target'] = data['Buy_Signal'] * 10
+    #############################################
+    #stop_loss_pct = 0  # percent
+    #data.loc[cond_buy, 'StopLoss'] = data['Low_5'] * (1 - stop_loss_pct / 100)
+    #target_pct = 10  # percent
+    #data.loc[cond_buy, 'Target'] = data['Buy_Signal'] * (1 + target_pct / 100)
+    #############################################
 
-    # ---------------- Final Buy Condition ----------------
-    # Remove overly strict filters for realistic signal frequency
-    cond_buy = cond_6m_breakout & cond_above_200ema & cond_vol_spike & cond_strong_body & cond_rsi
-    # Optional stricter version with retest:
-    # cond_buy = cond_buy & cond_retest
-
-    # ---------------- Buy, StopLoss, Target ----------------
-    data.loc[cond_buy, 'Buy_Signal'] = data['Close']
-
-    # Stop-loss = 5% below 5-day low
-    data['Low_5'] = data['Low'].rolling(5).min()
-    data.loc[cond_buy, 'StopLoss'] = (data['Low_5'] * 0.95).round(2)
-
-    # Target = 20% above buy
-    data.loc[cond_buy, 'Target'] = (data['Buy_Signal'] * 1.20).round(2)
-
-    # ---------------- Save ----------------
+    # --- Filter & Save ---
     data = data.loc[data['Date'] >= start_date]
     data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
-
-    print(f"✅ Processed {symbol} with breakout + volume + strong candle + RSI >50 + EMA200 check")
+    print(f"✅ Processed {symbol} (MACD < -2, RSI 30–50)")
 
 
 #################################
