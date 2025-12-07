@@ -184,6 +184,7 @@ def get_nifty50_data(from_date, to_date):
     nifty50_data = yf.download('TCS.NS', start=from_date, end=to_date)
     #print(nifty50_data)
     #nifty50_data = nifty50.history(start=from_date, end=to_date)
+    print(nifty50_data)
     return nifty50_data
 def fetch_yahoo_finance_data_old(symbol, start_date, end_date):
     try:

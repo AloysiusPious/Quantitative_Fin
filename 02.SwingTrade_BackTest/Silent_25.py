@@ -1,6 +1,7 @@
 import configparser
 from matplotlib.offsetbox import AnchoredText
 from swing_util import *
+from stratesgies import *
 import concurrent.futures
 import time
 import ta
@@ -8,81 +9,119 @@ import ta
 
 def draw_down_chart():
     all_trades = []
+
+    # ---- Load all CSV files and merge ----
     if os.path.isdir(Reports_Dir) and os.listdir(Reports_Dir):
         for filename in os.listdir(Reports_Dir):
             if filename.endswith(".csv"):
                 filepath = os.path.join(Reports_Dir, filename)
                 df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
                 all_trades.append(df)
+
         all_trades = pd.concat(all_trades, ignore_index=True)
         all_trades = all_trades.sort_values(by='Buy Date')
 
-        # Calculate cumulative profit
+        # ---- Capital Computation ----
         all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
-
-        # Calculate capital over time
         all_trades['Capital'] = capital + all_trades['Cumulative Profit']
 
-        # Fetch Nifty 50 data within the specified date range
-        nifty50_data = get_nifty50_data(from_date, from_date)
-        #nifty50_data = fetch_kite_data(enctoken, "NIFTY 50", from_date, to_date, interval='day')
+        # Ensure dates are datetime
+        all_trades['Buy Date'] = pd.to_datetime(all_trades['Buy Date'])
 
-        # Calculate the percentage increase
+        file_path = f'{cvs_raw_data}/nifty_50.csv'
+
+        # ---------------- Load or Download ----------------
+        if not os.path.exists(file_path):
+            # ---- Fetch Nifty 50 data ----
+            nifty50_data = fetch_kite_data(enctoken, "NIFTY 50", from_date, to_date, interval='day')
+            nifty50_data.to_csv(file_path, index=False)
+        nifty50_data = pd.read_csv(file_path)
+        # Fix Nifty date column and set index
+        nifty50_data['Date'] = pd.to_datetime(nifty50_data['Date'])
+        nifty50_data.set_index('Date', inplace=True)
+
+        # ---- Calculate returns ----
         final_capital = all_trades['Capital'].iloc[-1]
         percentage_increase = ((final_capital - capital) / capital) * 100
 
-        # Create a figure and a set of subplots
+        # ---- Create Plot ----
         fig, ax1 = plt.subplots(figsize=(14, 7))
 
-        # Plotting the capital growth
-        ax1.plot(all_trades['Buy Date'], all_trades['Capital'], marker='', linestyle='-', color='b',
-                 label='Capital Over Time')
-        ax1.annotate(f'Start: ₹{capital}', xy=(all_trades['Buy Date'].iloc[0], capital),
-                     xytext=(all_trades['Buy Date'].iloc[0], capital),
-                     arrowprops=dict(facecolor='green', shrink=0.05))
-        ax1.annotate(f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
-                     xy=(all_trades['Buy Date'].iloc[-1], final_capital),
-                     xytext=(all_trades['Buy Date'].iloc[-1], final_capital),
-                     arrowprops=dict(facecolor='red', shrink=0.05))
+        # Capital growth line
+        ax1.plot(
+            all_trades['Buy Date'],
+            all_trades['Capital'],
+            linestyle='-',
+            color='b',
+            label='Capital Over Time'
+        )
 
-        # Set labels for the first y-axis
+        # Start annotation
+        ax1.annotate(
+            f'Start: ₹{capital}',
+            xy=(all_trades['Buy Date'].iloc[0], capital),
+            xytext=(all_trades['Buy Date'].iloc[0], capital * 1.01),
+            arrowprops=dict(facecolor='green', shrink=0.05)
+        )
+
+        # End annotation
+        ax1.annotate(
+            f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
+            xy=(all_trades['Buy Date'].iloc[-1], final_capital),
+            xytext=(all_trades['Buy Date'].iloc[-1], final_capital * 1.01),
+            arrowprops=dict(facecolor='red', shrink=0.05)
+        )
+
+        # Axis labels
         ax1.set_xlabel('Date')
         ax1.set_ylabel('Capital (₹)', color='b')
         ax1.tick_params(axis='y', labelcolor='b')
         ax1.legend(loc='upper left')
 
-        # Create a second y-axis to plot the Nifty 50 index
+        # ---- Nifty 50 plot on second axis ----
         ax2 = ax1.twinx()
-        ax2.plot(nifty50_data.index, nifty50_data['Close'], linestyle='--', color='orange', label='Nifty 50')
+        ax2.plot(
+            nifty50_data.index,
+            nifty50_data['Close'],
+            linestyle='--',
+            color='orange',
+            label='Nifty 50'
+        )
         ax2.set_ylabel('Nifty 50 Index', color='orange')
         ax2.tick_params(axis='y', labelcolor='orange')
         ax2.legend(loc='upper center')
 
-        # Add grid, title, and layout settings
+        # ---- Chart styling ----
         plt.title('Capital Growth Over Time and Nifty 50 Index')
         fig.tight_layout()
         plt.grid(True)
 
-        # Adjust text box to fit inside the chart window
-        # wrapped_condition = condition_chart.replace(" and ", " and\n")
+        # ---- Text Box with parameters ----
         textstr = '\n'.join((
             f'capital = {capital}',
             f'no_of_stock_to_trade = {no_of_stock_to_trade}',
             f'compound = {compound}',
             f'target_percentage = {target_percentage}',
             f'stop_loss_percentage = {stop_loss_percentage}',
-            # f'trade_Logic:\n{wrapped_condition}'
         ))
 
-        anchored_text = AnchoredText(textstr, loc='lower right', frameon=True, bbox_to_anchor=(1, 0.15),
-                                     bbox_transform=ax1.transAxes, prop=dict(size=8))  # Reduce font size to 8
-        anchored_text.patch.set_boxstyle("round,pad=0.5,rounding_size=0.5")
-        ax1.add_artist(anchored_text)
+        anchored_text = AnchoredText(
+            textstr,
+            loc='lower right',
+            frameon=True,
+            bbox_to_anchor=(1, 0.15),
+            bbox_transform=ax1.transAxes,
+            prop=dict(size=8)
+        )
 
-        # Save the plot
+        #anchored_text.patch.set_boxstyle("round,pad=0.5,rounding_size=0.5")
+        #ax1.add_artist(anchored_text)
+
+        # ---- Save and show ----
         plt.savefig(f'{Charts_Dir}/draw_down_{symbols_type}_{from_date}_to_{to_date}.png')
         plt.show()
         plt.close()
+
 
 
 def create_master_file(summary_dir, from_date, to_date, capital):
@@ -367,46 +406,31 @@ def process_date(date, date_ref_df, trade_report):
 
                         if compound:
                             capital_per_stock = final_capital / no_of_stock_to_trade
-def start_processing_symbols(enctoken, symbols_file, from_date, to_date):
-    with open('./symbols/' + symbols_file, 'r') as file:
-        stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]
 
-    total_stocks = len(stocks)
-    print(f"Total number of stocks: {total_stocks}")
-
-    def process_stock(stock):
-        try:
-            mark_signals(enctoken, stock, from_date, to_date)
-            return f"✅ {stock} done"
-        except Exception as e:
-            return f"❌ {stock} failed: {e}"
-
-    # Parallel execution
-    start_time = time.time()
-    max_threads = min(10, total_stocks)  # Safe for network I/O
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        results = list(executor.map(process_stock, stocks))
-
-    for res in results:
-        print(res)
-
-    print(f"\n✅ Completed {total_stocks} stocks in {time.time() - start_time:.2f}s")
-    print("Now will start Trade...")
-    time.sleep(0.25)
 
 ######################### ACTUAL TRADE BEGINS #############################
 
 def get_stock_for_reference_date(enctoken, cvs_data_dir, cvs_raw_data, start_date, end_date):
     # Read the date reference file
-    #fetch_kite_data(cvs_raw_data, enctoken, "TCS", start_date, end_date, interval='day')
-    get_stock_for_date_refrence(cvs_raw_data, from_date, to_date)
-    file_list = [f'{cvs_raw_data}/stock_date_ref.csv']
-    copy_specific_files(file_list, cvs_data_dir)
-    date_ref_df = pd.read_csv(f'{cvs_data_dir}/stock_date_ref.csv')
+    nifty50_data = fetch_kite_data(enctoken, "TCS", start_date, end_date, interval='day')
+    # Extract only the Date column & ensure date format
+    date_ref = pd.DataFrame({
+        'Date': pd.to_datetime(nifty50_data['Date']).dt.date
+    })
+    # Drop empty rows (usually none)
+    date_ref.dropna(inplace=True)
+    # Save to CSV
+    date_ref.to_csv(f"{cvs_raw_data}/stock_date_ref.csv", index=False)
+
+    #get_stock_for_date_refrence(cvs_raw_data, from_date, to_date)
+    #file_list = [f'{cvs_raw_data}/stock_date_ref.csv']
+    #copy_specific_files(file_list, cvs_data_dir)
+    date_ref_df = pd.read_csv(f'{cvs_raw_data}/stock_date_ref.csv')
     dates = date_ref_df['Date'].tolist()
     # Process each date in the date reference file
     for date in dates:
         process_date(date, date_ref_df, trade_report)
+
 
 def procee_final_report(Reports_Dir):
     ###### Process Final Report
@@ -439,52 +463,14 @@ def procee_final_report(Reports_Dir):
     if cleanup_logs:
         for log_file in glob.glob('*.log'):
             os.remove(log_file)
-def find_pivots(series, left=3, right=3):
-    pivots = []
-    for i in range(left, len(series)-right):
-        window = series[i-left:i+right+1]
-        if series[i] == window.min():
-            pivots.append(i)
-    return pivots
 
-
-def detect_reverse_head_shoulders(data):
-    lows = data['Low']
-    pivots = find_pivots(lows, left=3, right=3)
-
-    rhs_signal = pd.Series(False, index=data.index)
-
-    for i in range(2, len(pivots)):
-        ls = pivots[i-2]
-        h  = pivots[i-1]
-        rs = pivots[i]
-
-        cond1 = lows[h] < lows[ls]
-        cond2 = lows[h] < lows[rs]
-        cond3 = abs(lows[ls] - lows[rs]) < (0.04 * lows[h])   # shoulders equal ±4%
-        cond4 = ls < h < rs
-
-        if cond1 and cond2 and cond3 and cond4:
-
-            neckline = max(
-                data['High'][ls:h].max(),
-                data['High'][h:rs].max()
-            )
-
-            # breakout above neckline
-            breakout = data['Close'][rs:] > neckline
-            if breakout.any():
-                bidx = breakout.idxmax()
-                rhs_signal.loc[bidx] = True
-
-    return rhs_signal
-
-import os
-import pandas as pd
-import numpy as np
-import talib
 
 def mark_signals(enctoken, symbol, start_date, end_date):
+    import os
+    import numpy as np
+    import pandas as pd
+    import talib
+
     file_path = f'{cvs_raw_data}/{symbol}.csv'
 
     # ---------------- Load or Download ----------------
@@ -499,59 +485,162 @@ def mark_signals(enctoken, symbol, start_date, end_date):
         print(f"{symbol} found in local and processing it ...")
         data = pd.read_csv(file_path)
 
+    # Ensure Date is sorted ascending and index is integer position
+    data = data.sort_values('Date').reset_index(drop=True)
+
     # ---------------- Indicators ----------------
-
-    # EMA
+    # EMAs
+    data['EMA20']  = data['Close'].ewm(span=20,  adjust=False).mean()
+    data['EMA50']  = data['Close'].ewm(span=50,  adjust=False).mean()
+    data['EMA100'] = data['Close'].ewm(span=100, adjust=False).mean()
     data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
-    cond_above_200ema = data['Close'] > data['EMA200']
 
-    # 6-month high breakout (~126 trading days)
-    data['High_126'] = data['High'].rolling(126).max()
-    cond_6m_breakout = data['Close'] > data['High_126'].shift(1)
+    # ATR (using talib for consistency)
+    data['ATR'] = talib.ATR(data['High'], data['Low'], data['Close'], timeperiod=14)
 
-    # Volume spike (simple)
-    data['Vol_20'] = data['Volume'].rolling(20).mean()
-    cond_vol_spike = data['Volume'] > 1.5 * data['Vol_20']
+    # Volume average for optional filters
+    data['Vol20'] = data['Volume'].rolling(20).mean()
 
-    # Candle body >50% of range
-    data['Body'] = (data['Close'] - data['Open']).abs()
-    data['Range'] = data['High'] - data['Low']
-    cond_strong_body = data['Body'] > 0.50 * data['Range']
+    # ---------------- EMA Alignment & Fresh Crossover Logic ----------------
+    # bullish alignment boolean
+    bullish_cross = (
+        (data['EMA20'] > data['EMA50']) &
+        (data['EMA50'] > data['EMA100']) &
+        (data['EMA100'] > data['EMA200'])
+    )
 
-    # RSI
-    data['RSI'] = talib.RSI(data['Close'], timeperiod=14)
-    cond_rsi = data['RSI'] > 50
+    bullish_cross = bullish_cross.astype(bool)
+    prev = bullish_cross.shift(1, fill_value=False)
+    became_bullish = bullish_cross & (~prev)
 
-    # Optional retest: 5% below breakout
-    retest_zone = 0.95
-    breakout_level = data['High_126']
-    cond_retest = (data['Low'] < breakout_level * 1.0) & (data['Low'] > breakout_level * retest_zone)
+    # Ensure "fresh" means there was NO bullish alignment in the prior 40 bars
+    # We check the rolling max of the shifted bullish_cross over prior 40 bars; if any True existed, rolling max==1.
+    had_bullish_in_prev_40 = bullish_cross.shift(1).rolling(window=40, min_periods=1).max().fillna(0).astype(bool)
+    fresh_bullish_start = became_bullish & (~had_bullish_in_prev_40)
 
-    # ---------------- Final Buy Condition ----------------
-    # Remove overly strict filters for realistic signal frequency
-    cond_buy = cond_6m_breakout & cond_above_200ema & cond_vol_spike & cond_strong_body & cond_rsi
-    # Optional stricter version with retest:
-    # cond_buy = cond_buy & cond_retest
+    # ---------------- First Pullback to EMA20 Logic ----------------
+    # Pullback condition: price dips to EMA20 zone (within 1%) and still closes above EMA20
+    cond_pullback_zone = (data['Low'] <= data['EMA20'] * 1.01) & (data['Close'] > data['EMA20'])
 
-    # ---------------- Buy, StopLoss, Target ----------------
-    data.loc[cond_buy, 'Buy_Signal'] = data['Close']
+    # We want the first pullback **after** the fresh bullish start.
+    # Create a series marking the index of the most recent fresh_bullish_start up to each row:
+    fresh_idx = pd.Series(np.nan, index=data.index)
+    fresh_points = fresh_bullish_start[fresh_bullish_start].index.tolist()
+    if fresh_points:
+        # propagate the most recent fresh_start index forward
+        last = np.nan
+        fi_iter = iter(fresh_points)
+        next_fp = next(fi_iter, None)
+        for i in data.index:
+            if next_fp is not None and i == next_fp:
+                last = next_fp
+                next_fp = next(fi_iter, None)
+            fresh_idx.at[i] = last
+    # fresh_idx holds index of the latest fresh bullish start (or NaN)
 
-    # Stop-loss = 5% below 5-day low
-    data['Low_5'] = data['Low'].rolling(5).min()
-    data.loc[cond_buy, 'StopLoss'] = (data['Low_5'] * 0.95).round(2)
+    # A pullback qualifies if:
+    # - cond_pullback_zone is True on that row
+    # - AND there exists a fresh_idx for which fresh_idx < current index (i.e., the fresh alignment happened earlier)
+    cond_has_fresh = ~fresh_idx.isna()
+    cond_fresh_after = False
+    # build condition: fresh alignment must occur before current bar (not same bar)
+    cond_fresh_after = cond_has_fresh & (fresh_idx.astype(float) < data.index.astype(float))
 
-    # Target = 20% above buy
-    data.loc[cond_buy, 'Target'] = (data['Buy_Signal'] * 1.20).round(2)
+    # Final pullback-after-fresh condition
+    cond_first_pullback_after_fresh = cond_pullback_zone & cond_fresh_after
+
+    # Optional additional filter: bullish candle on pullback bar (close>open)
+    cond_bullish_candle = data['Close'] > data['Open']
+    cond_volume_ok = data['Volume'] > (1.0 * data['Vol20'])  # keep volume optional (1x average)
+
+    # Combine final BUY condition (you can tune cond_volume_ok and cond_bullish_candle)
+    cond_buy = cond_first_pullback_after_fresh & cond_bullish_candle & cond_volume_ok
+
+    # ---------------- Stop Loss (previous swing low) & Target (3R) ----------------
+    # Define previous swing low as min of last 5 bars before the entry bar (shifted window)
+    swing_lookback = 5
+    data['PrevSwingLow'] = data['Low'].rolling(window=swing_lookback, min_periods=1).apply(
+        lambda x: np.nan if len(x) < swing_lookback else x[:-0].min(), raw=False
+    )  # we'll override with a safer method below
+
+    # Simpler previous swing low (min over last 5 bars prior to current bar)
+    data['PrevSwingLow'] = data['Low'].shift(1).rolling(window=swing_lookback, min_periods=1).min()
+
+    # Initialize output columns
+    data['Buy_Signal'] = np.nan
+    data['StopLoss'] = np.nan
+    data['Target'] = np.nan
+
+    for idx in data[cond_buy].index:
+        buy_price = data.at[idx, 'Close']
+        swing_low = data.at[idx, 'PrevSwingLow']
+        atr = data.at[idx, 'ATR'] if not np.isnan(data.at[idx, 'ATR']) else 0.0
+
+        # Primary SL: previous swing low (if available) minus small buffer (0.25*ATR)
+        if not np.isnan(swing_low):
+            sl = swing_low - 0.25 * atr
+        else:
+            # fallback SL: buy - 1.5 * ATR
+            sl = buy_price - 1.5 * atr
+
+        # ensure SL is below buy price and at least 1.0*ATR away (meaningful)
+        min_dist = 1.0 * atr
+        if (buy_price - sl) < min_dist:
+            sl = buy_price - min_dist
+
+        # if SL >= buy (edge case), set fallback
+        if sl >= buy_price:
+            sl = buy_price - min_dist
+
+        risk = buy_price - sl
+        # Skip trade if risk is zero or negative
+        if risk <= 0 or np.isnan(risk):
+            continue
+
+        tp = buy_price + 3.0 * risk  # 3R target
+
+        data.at[idx, 'Buy_Signal'] = round(buy_price, 2)
+        data.at[idx, 'StopLoss'] = round(sl, 2)
+        data.at[idx, 'Target'] = round(tp, 2)
 
     # ---------------- Save ----------------
     data = data.loc[data['Date'] >= start_date]
     data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
 
-    print(f"✅ Processed {symbol} with breakout + volume + strong candle + RSI >50 + EMA200 check")
+    print(f"✅ Processed {symbol} — Fresh EMA alignment (40 bars) + EMA20 pullback strategy")
+
+
+##################################################################################################
+def start_processing_symbols(enctoken, symbols_file, from_date, to_date):
+    with open('./symbols/' + symbols_file, 'r') as file:
+        stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]
+
+    total_stocks = len(stocks)
+    print(f"Total number of stocks: {total_stocks}")
+
+    def process_stock(stock):
+        try:
+            mark_signals(enctoken, stock, from_date, to_date)
+            return f"✅ {stock} done"
+        except Exception as e:
+            return f"❌ {stock} failed: {e}"
+
+    # Parallel execution
+    start_time = time.time()
+    max_threads = min(10, total_stocks)  # Safe for network I/O
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+        results = list(executor.map(process_stock, stocks))
+
+    for res in results:
+        print(res)
+
+    print(f"\n✅ Completed {total_stocks} stocks in {time.time() - start_time:.2f}s")
+    print("Now will start Trade...")
+    time.sleep(0.25)
 
 
 #################################
-enctoken = "lHzsiBNAEhEfRgs8FHvii4ShXwj2+eAe4gUju9y0TPd9UOpforkDDEILPf5+ZDLFZOwO6RzDYQ2PnjSPA53Z7WLko/ulPv4Pk2B5AjSD1xoO1s8e46oXsA=="
+enctoken = "FPJqvhe2c14OihE5T8+sFL9bKCDQFyfnavPrnwNLX4FNpgdcw3FclDnpyaZsjfSKBRvjYODB3yresECfMFbRjl4jOH2l0VEAcruG4sJDO/w1UWIOpnowzA=="
 # Read the configuration file
 config = configparser.ConfigParser()
 config.read('config.cfg')
