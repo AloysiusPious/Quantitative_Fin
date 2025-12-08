@@ -1,140 +1,128 @@
 import configparser
-import pandas as pd
-import glob
-import os
 from matplotlib.offsetbox import AnchoredText
 from swing_util import *
+import concurrent.futures
+import time
+import talib
+
+
 def draw_down_chart():
     all_trades = []
-    for filename in os.listdir(Reports_Dir):
-        if filename.endswith(".csv"):
-            filepath = os.path.join(Reports_Dir, filename)
-            df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
-            all_trades.append(df)
-    all_trades = pd.concat(all_trades, ignore_index=True)
-    all_trades = all_trades.sort_values(by='Buy Date')
 
-    # Calculate cumulative profit
-    all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
+    # ---- Load all CSV files and merge ----
+    if os.path.isdir(Reports_Dir) and os.listdir(Reports_Dir):
+        for filename in os.listdir(Reports_Dir):
+            if filename.endswith(".csv"):
+                filepath = os.path.join(Reports_Dir, filename)
+                df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
+                all_trades.append(df)
 
-    # Calculate capital over time
-    all_trades['Capital'] = capital + all_trades['Cumulative Profit']
+        all_trades = pd.concat(all_trades, ignore_index=True)
+        all_trades = all_trades.sort_values(by='Buy Date')
 
-    # Fetch Nifty 50 data within the specified date range
-    nifty50_data = get_nifty50_data(from_date, to_date)
+        # ---- Capital Computation ----
+        all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
+        all_trades['Capital'] = capital + all_trades['Cumulative Profit']
 
-    # Calculate the percentage increase
-    final_capital = all_trades['Capital'].iloc[-1]
-    percentage_increase = ((final_capital - capital) / capital) * 100
+        # Ensure dates are datetime
+        all_trades['Buy Date'] = pd.to_datetime(all_trades['Buy Date'])
 
-    # Create a figure and a set of subplots
-    fig, ax1 = plt.subplots(figsize=(14, 7))
+        file_path = f'{cvs_raw_data}/nifty_50.csv'
 
-    # Plotting the capital growth
-    ax1.plot(all_trades['Buy Date'], all_trades['Capital'], marker='', linestyle='-', color='b',
-             label='Capital Over Time')
-    ax1.annotate(f'Start: ₹{capital}', xy=(all_trades['Buy Date'].iloc[0], capital),
-                 xytext=(all_trades['Buy Date'].iloc[0], capital),
-                 arrowprops=dict(facecolor='green', shrink=0.05))
-    ax1.annotate(f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
-                 xy=(all_trades['Buy Date'].iloc[-1], final_capital),
-                 xytext=(all_trades['Buy Date'].iloc[-1], final_capital),
-                 arrowprops=dict(facecolor='red', shrink=0.05))
+        # ---------------- Load or Download ----------------
+        if not os.path.exists(file_path):
+            # ---- Fetch Nifty 50 data ----
+            nifty50_data = fetch_kite_data(enctoken, "NIFTY 50", from_date, to_date, interval=time_frame)
+            nifty50_data.to_csv(file_path, index=False)
+        nifty50_data = pd.read_csv(file_path)
+        # Fix Nifty date column and set index
+        nifty50_data['Date'] = pd.to_datetime(nifty50_data['Date'])
+        nifty50_data.set_index('Date', inplace=True)
 
-    # Set labels for the first y-axis
-    ax1.set_xlabel('Date')
-    ax1.set_ylabel('Capital (₹)', color='b')
-    ax1.tick_params(axis='y', labelcolor='b')
-    ax1.legend(loc='upper left')
+        # ---- Calculate returns ----
+        final_capital = all_trades['Capital'].iloc[-1]
+        percentage_increase = ((final_capital - capital) / capital) * 100
 
-    # Create a second y-axis to plot the Nifty 50 index
-    ax2 = ax1.twinx()
-    ax2.plot(nifty50_data.index, nifty50_data['Close'], linestyle='--', color='orange', label='Nifty 50')
-    ax2.set_ylabel('Nifty 50 Index', color='orange')
-    ax2.tick_params(axis='y', labelcolor='orange')
-    ax2.legend(loc='upper center')
+        # ---- Create Plot ----
+        fig, ax1 = plt.subplots(figsize=(14, 7))
 
-    # Add grid, title, and layout settings
-    plt.title('Capital Growth Over Time and Nifty 50 Index')
-    fig.tight_layout()
-    plt.grid(True)
+        # Capital growth line
+        ax1.plot(
+            all_trades['Buy Date'],
+            all_trades['Capital'],
+            linestyle='-',
+            color='b',
+            label='Capital Over Time'
+        )
 
-    # Add the text box with the specified details
-    textstr = '\n'.join((
-        f'capital = {capital}',
-        f'no_of_stock_to_trade = {no_of_stock_to_trade}',
-        f'compound = {compound}',
-        f'target_percentage = {target_percentage}',
-        f'stop_loss_percentage = {stop_loss_percentage}'
-    ))
+        # Start annotation
+        ax1.annotate(
+            f'Start: ₹{capital}',
+            xy=(all_trades['Buy Date'].iloc[0], capital),
+            xytext=(all_trades['Buy Date'].iloc[0], capital * 1.01),
+            arrowprops=dict(facecolor='green', shrink=0.05)
+        )
 
-    anchored_text = AnchoredText(textstr, loc='lower right', frameon=True, bbox_to_anchor=(1, 0), bbox_transform=ax1.transAxes)
-    anchored_text.patch.set_boxstyle("round,pad=0.5,rounding_size=0.5")
-    ax1.add_artist(anchored_text)
+        # End annotation
+        ax1.annotate(
+            f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
+            xy=(all_trades['Buy Date'].iloc[-1], final_capital),
+            xytext=(all_trades['Buy Date'].iloc[-1], final_capital * 1.01),
+            arrowprops=dict(facecolor='red', shrink=0.05)
+        )
 
-    # Save the plot
-    plt.savefig(f'{Charts_Dir}/capital_drawdown_{from_date}_to_{to_date}.png')
-    plt.show()
-    plt.close()
+        # Axis labels
+        ax1.set_xlabel('Date')
+        ax1.set_ylabel('Capital (₹)', color='b')
+        ax1.tick_params(axis='y', labelcolor='b')
+        ax1.legend(loc='upper left')
+
+        # ---- Nifty 50 plot on second axis ----
+        ax2 = ax1.twinx()
+        ax2.plot(
+            nifty50_data.index,
+            nifty50_data['Close'],
+            linestyle='--',
+            color='orange',
+            label='Nifty 50'
+        )
+        ax2.set_ylabel('Nifty 50 Index', color='orange')
+        ax2.tick_params(axis='y', labelcolor='orange')
+        ax2.legend(loc='upper center')
+
+        # ---- Chart styling ----
+        plt.title('Capital Growth Over Time and Nifty 50 Index')
+        fig.tight_layout()
+        plt.grid(True)
+
+        # ---- Text Box with parameters ----
+        textstr = '\n'.join((
+            f'capital = {capital}',
+            f'no_of_stock_to_trade = {no_of_stock_to_trade}',
+            f'compound = {compound}',
+            f'target_percentage = {target_percentage}',
+            f'stop_loss_percentage = {stop_loss_percentage}',
+        ))
+
+        anchored_text = AnchoredText(
+            textstr,
+            loc='lower right',
+            frameon=True,
+            bbox_to_anchor=(1, 0.15),
+            bbox_transform=ax1.transAxes,
+            prop=dict(size=8)
+        )
+
+        #anchored_text.patch.set_boxstyle("round,pad=0.5,rounding_size=0.5")
+        #ax1.add_artist(anchored_text)
+
+        # ---- Save and show ----
+        plt.savefig(f'{Charts_Dir}/draw_down_{symbols_type}_{from_date}_to_{to_date}.png')
+        plt.show()
+        plt.close()
 
 
-def draw_down_chart1():
-    all_trades = []
-    for filename in os.listdir(Reports_Dir):
-        if filename.endswith(".csv"):
-            filepath = os.path.join(Reports_Dir, filename)
-            df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
-            all_trades.append(df)
-    all_trades = pd.concat(all_trades, ignore_index=True)
-    all_trades = all_trades.sort_values(by='Buy Date')
 
-    # Calculate cumulative profit
-    all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
-
-    # Calculate capital over time
-    all_trades['Capital'] = capital + all_trades['Cumulative Profit']
-
-    # Fetch Nifty 50 data within the specified date range
-    nifty50_data = get_nifty50_data(from_date, to_date)
-
-    # Calculate the percentage increase
-    final_capital = all_trades['Capital'].iloc[-1]
-    percentage_increase = ((final_capital - capital) / capital) * 100
-
-    # Create a figure and a set of subplots
-    fig, ax1 = plt.subplots(figsize=(14, 7))
-
-    # Plotting the capital growth
-    ax1.plot(all_trades['Buy Date'], all_trades['Capital'], marker='', linestyle='-', color='b',
-             label='Capital Over Time')
-    ax1.annotate(f'Start: ₹{capital}', xy=(all_trades['Buy Date'].iloc[0], capital),
-                 xytext=(all_trades['Buy Date'].iloc[0], capital),
-                 arrowprops=dict(facecolor='green', shrink=0.05))
-    ax1.annotate(f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
-                 xy=(all_trades['Buy Date'].iloc[-1], final_capital),
-                 xytext=(all_trades['Buy Date'].iloc[-1], final_capital),
-                 arrowprops=dict(facecolor='red', shrink=0.05))
-
-    # Set labels for the first y-axis
-    ax1.set_xlabel('Date')
-    ax1.set_ylabel('Capital (₹)', color='b')
-    ax1.tick_params(axis='y', labelcolor='b')
-    ax1.legend(loc='upper left')
-
-    # Create a second y-axis to plot the Nifty 50 index
-    ax2 = ax1.twinx()
-    ax2.plot(nifty50_data.index, nifty50_data['Close'], linestyle='--', color='orange', label='Nifty 50')
-    ax2.set_ylabel('Nifty 50 Index', color='orange')
-    ax2.tick_params(axis='y', labelcolor='orange')
-    ax2.legend(loc='upper center')
-
-    # Add grid, title, and layout settings
-    plt.title('Capital Growth Over Time and Nifty 50 Index')
-    fig.tight_layout()
-    plt.grid(True)
-    plt.savefig(f'{Charts_Dir}/capital_drawdown_{symbols_type}_{from_date}_to_{to_date}.png')
-    #plt.show()
-    plt.close()
 def create_master_file(summary_dir, from_date, to_date, capital):
     # Initialize lists to store data
     stock_names = []
@@ -200,8 +188,10 @@ def create_master_file(summary_dir, from_date, to_date, capital):
         'Total Trades': sum(total_trades),
         'No of Winning Trade': sum(total_winning_trades),
         'No of Losing Trade': sum(total_losing_trades),
-        'Winning Trade Percentage': round((sum(total_winning_trades) / sum(total_trades)) * 100, 2) if sum(total_trades) > 0 else 0,
-        'Losing Trade Percentage': round((sum(total_losing_trades) / sum(total_trades)) * 100, 2) if sum(total_trades) > 0 else 0,
+        'Winning Trade Percentage': round((sum(total_winning_trades) / sum(total_trades)) * 100, 2) if sum(
+            total_trades) > 0 else 0,
+        'Losing Trade Percentage': round((sum(total_losing_trades) / sum(total_trades)) * 100, 2) if sum(
+            total_trades) > 0 else 0,
         'Total Profit': round(sum(total_profit), 2),
         'Total Cumulative Return Percentage': round((sum(total_profit) / capital) * 100, 2),
         'Total Charges Paid': round(sum(total_charges_paid_list), 2),
@@ -221,7 +211,6 @@ def create_master_file(summary_dir, from_date, to_date, capital):
     master_df.to_csv(f"{master_dir}/Master_{from_date}_to_{to_date}.csv", index=False)
 
     print(f"Master file created successfully at {master_dir}/Master_{from_date}_to_{to_date}.csv")
-
 
 
 # Function to calculate summary statistics for each stock
@@ -269,6 +258,8 @@ def calculate_summary_per_stock(symbol, report_df, Summary_Dir):
     summary_df.to_csv(f"{Summary_Dir}/{symbol}_summary.csv", index=False)
 
     return summary
+
+
 # Function to calculate the number of holding days
 def calculate_holding_days(buy_date, exit_date):
     return (pd.to_datetime(exit_date) - pd.to_datetime(buy_date)).days
@@ -280,7 +271,8 @@ def read_stock_files():
     stock_files = [f for f in stock_files if not f.endswith('stock_date_ref.csv')]
     return stock_files
 
-def process_date(date):
+
+def process_date(date, date_ref_df, trade_report):
     global active_positions, capital_per_stock, final_capital
     # Get the last date
     last_date = date_ref_df['Date'].max()
@@ -335,7 +327,8 @@ def process_date(date):
                         sell_price = position['target_price']
                         profit_amount = (sell_price - position['buy_price']) * position['shares']
                         invested_amount = position['buy_price'] * position['shares']
-                        profit_percent = (profit_amount / invested_amount) * 100
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            profit_percent = np.where(invested_amount != 0, (profit_amount / invested_amount) * 100, 0)
                         active_positions = [p for p in active_positions if p['symbol'] != symbol]
                         trade_report[symbol].append({
                             'Buy Date': position['buy_date'],
@@ -402,18 +395,242 @@ def process_date(date):
                             'Exited Price': round_to_nearest_0_05(last_close_price),
                             'Profit Amount': round_to_nearest_0_05(profit_amount),
                             'Trade Status': 'LastDayClose',
-                            'No of holding Days': calculate_holding_days(position['buy_date'], last_day_data.iloc[-1]['Date']),
+                            'No of holding Days': calculate_holding_days(position['buy_date'],
+                                                                         last_day_data.iloc[-1]['Date']),
                             'Profit %': round_to_nearest_0_05(profit_percent)
                         })
                         final_capital += profit_amount
-                        print(f"Sold {symbol} on {last_day_data.iloc[-1]['Date']} at {last_close_price} (Last day close)")
+                        print(
+                            f"Sold {symbol} on {last_day_data.iloc[-1]['Date']} at {last_close_price} (Last day close)")
 
                         if compound:
                             capital_per_stock = final_capital / no_of_stock_to_trade
 
 
+######################### ACTUAL TRADE BEGINS #############################
+
+def get_stock_for_reference_date(enctoken, cvs_data_dir, cvs_raw_data, start_date, end_date):
+    # Read the date reference file
+    nifty50_data = fetch_kite_data(enctoken, "TCS", start_date, end_date, interval=time_frame)
+    # Extract only the Date column & ensure date format
+    date_ref = pd.DataFrame({
+        'Date': pd.to_datetime(nifty50_data['Date']).dt.date
+    })
+    # Drop empty rows (usually none)
+    date_ref.dropna(inplace=True)
+    # Save to CSV
+    date_ref.to_csv(f"{cvs_raw_data}/stock_date_ref.csv", index=False)
+    date_ref_df = pd.read_csv(f'{cvs_raw_data}/stock_date_ref.csv')
+    dates = date_ref_df['Date'].tolist()
+    # Process each date in the date reference file
+    for date in dates:
+        process_date(date, date_ref_df, trade_report)
 
 
+def procee_final_report(Reports_Dir):
+    ###### Process Final Report
+
+    # Save each stock's trade report to a separate CSV file
+    for symbol, trades in trade_report.items():
+        report_df = pd.DataFrame(trades)
+        if not report_df.empty:
+            report_df.to_csv(f'{Reports_Dir}/{symbol}_trade_report.csv', index=False)
+
+    # Print the final capital
+    print(f"Final capital: {final_capital}")
+
+    # Initialize summary list
+    all_summaries = []
+
+    # Iterate over each stock's trade report and calculate summary
+    for report_file in glob.glob(f"{Reports_Dir}/*.csv"):
+        symbol = os.path.basename(report_file).replace('_trade_report.csv', '')
+        df = pd.read_csv(report_file)
+        summary = calculate_summary_per_stock(symbol, df.to_dict('records'), Summary_Dir)
+        all_summaries.append(summary)
+
+    # Print confirmation
+    print("Stock summaries created successfully.")
+
+    # Call function to create the Master_no_Compound_sce_5.csv file
+    create_master_file(Summary_Dir, from_date, to_date, capital)
+    # Clean up logs if necessary
+    if cleanup_logs:
+        for log_file in glob.glob('*.log'):
+            os.remove(log_file)
+
+
+def mark_signals(enctoken, symbol, start_date, end_date):
+    file_path = f'{cvs_raw_data}/{symbol}.csv'
+
+    # ---------------- Load or Download ----------------
+    if not os.path.exists(file_path):
+        print(f"{symbol} Not found locally — downloading ...")
+        data = fetch_kite_data(enctoken, symbol, start_date, end_date, interval=time_frame)
+        if data is None or data.empty:
+            print(f"No data for {symbol}")
+            return
+        data.to_csv(file_path, index=False)
+    else:
+        print(f"{symbol} found in local and processing it ...")
+        data = pd.read_csv(file_path)
+
+    # Ensure Date is sorted ascending and index is integer position
+    data = data.sort_values('Date').reset_index(drop=True)
+
+    # ---------------- Indicators ----------------
+    # EMAs
+    data['EMA20']  = data['Close'].ewm(span=20,  adjust=False).mean()
+    data['EMA50']  = data['Close'].ewm(span=50,  adjust=False).mean()
+    data['EMA100'] = data['Close'].ewm(span=100, adjust=False).mean()
+    data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
+
+    # ATR (using talib for consistency)
+    data['ATR'] = talib.ATR(data['High'], data['Low'], data['Close'], timeperiod=14)
+
+    # Volume average for optional filters
+    data['Vol20'] = data['Volume'].rolling(20).mean()
+
+    # ---------------- EMA Alignment & Fresh Crossover Logic ----------------
+    # bullish alignment boolean
+    bullish_cross = (
+        (data['EMA20'] > data['EMA50']) &
+        (data['EMA50'] > data['EMA100']) &
+        (data['EMA100'] > data['EMA200'])
+    )
+
+    bullish_cross = bullish_cross.astype(bool)
+    prev = bullish_cross.shift(1, fill_value=False)
+    became_bullish = bullish_cross & (~prev)
+
+    # Ensure "fresh" means there was NO bullish alignment in the prior 40 bars
+    # We check the rolling max of the shifted bullish_cross over prior 40 bars; if any True existed, rolling max==1.
+    had_bullish_in_prev_40 = bullish_cross.shift(1).rolling(window=40, min_periods=1).max().fillna(0).astype(bool)
+    fresh_bullish_start = became_bullish & (~had_bullish_in_prev_40)
+
+    # ---------------- First Pullback to EMA20 Logic ----------------
+    # Pullback condition: price dips to EMA20 zone (within 1%) and still closes above EMA20
+    cond_pullback_zone = (data['Low'] <= data['EMA20'] * 1.01) & (data['Close'] > data['EMA20'])
+
+    # We want the first pullback **after** the fresh bullish start.
+    # Create a series marking the index of the most recent fresh_bullish_start up to each row:
+    fresh_idx = pd.Series(np.nan, index=data.index)
+    fresh_points = fresh_bullish_start[fresh_bullish_start].index.tolist()
+    if fresh_points:
+        # propagate the most recent fresh_start index forward
+        last = np.nan
+        fi_iter = iter(fresh_points)
+        next_fp = next(fi_iter, None)
+        for i in data.index:
+            if next_fp is not None and i == next_fp:
+                last = next_fp
+                next_fp = next(fi_iter, None)
+            fresh_idx.at[i] = last
+    # fresh_idx holds index of the latest fresh bullish start (or NaN)
+
+    # A pullback qualifies if:
+    # - cond_pullback_zone is True on that row
+    # - AND there exists a fresh_idx for which fresh_idx < current index (i.e., the fresh alignment happened earlier)
+    cond_has_fresh = ~fresh_idx.isna()
+    cond_fresh_after = False
+    # build condition: fresh alignment must occur before current bar (not same bar)
+    cond_fresh_after = cond_has_fresh & (fresh_idx.astype(float) < data.index.astype(float))
+
+    # Final pullback-after-fresh condition
+    cond_first_pullback_after_fresh = cond_pullback_zone & cond_fresh_after
+
+    # Optional additional filter: bullish candle on pullback bar (close>open)
+    cond_bullish_candle = data['Close'] > data['Open']
+    cond_volume_ok = data['Volume'] > (1.0 * data['Vol20'])  # keep volume optional (1x average)
+
+    # Combine final BUY condition (you can tune cond_volume_ok and cond_bullish_candle)
+    cond_buy = cond_first_pullback_after_fresh & cond_bullish_candle & cond_volume_ok
+
+    # ---------------- Stop Loss (previous swing low) & Target (3R) ----------------
+    # Define previous swing low as min of last 5 bars before the entry bar (shifted window)
+    swing_lookback = 5
+    data['PrevSwingLow'] = data['Low'].rolling(window=swing_lookback, min_periods=1).apply(
+        lambda x: np.nan if len(x) < swing_lookback else x[:-0].min(), raw=False
+    )  # we'll override with a safer method below
+
+    # Simpler previous swing low (min over last 5 bars prior to current bar)
+    data['PrevSwingLow'] = data['Low'].shift(1).rolling(window=swing_lookback, min_periods=1).min()
+
+    # Initialize output columns
+    data['Buy_Signal'] = np.nan
+    data['StopLoss'] = np.nan
+    data['Target'] = np.nan
+
+    for idx in data[cond_buy].index:
+        buy_price = data.at[idx, 'Close']
+        swing_low = data.at[idx, 'PrevSwingLow']
+        atr = data.at[idx, 'ATR'] if not np.isnan(data.at[idx, 'ATR']) else 0.0
+
+        # Primary SL: previous swing low (if available) minus small buffer (0.25*ATR)
+        if not np.isnan(swing_low):
+            sl = swing_low - 0.25 * atr
+        else:
+            # fallback SL: buy - 1.5 * ATR
+            sl = buy_price - 1.5 * atr
+
+        # ensure SL is below buy price and at least 1.0*ATR away (meaningful)
+        min_dist = 1.0 * atr
+        if (buy_price - sl) < min_dist:
+            sl = buy_price - min_dist
+
+        # if SL >= buy (edge case), set fallback
+        if sl >= buy_price:
+            sl = buy_price - min_dist
+
+        risk = buy_price - sl
+        # Skip trade if risk is zero or negative
+        if risk <= 0 or np.isnan(risk):
+            continue
+
+        tp = buy_price + 3.0 * risk  # 3R target
+
+        data.at[idx, 'Buy_Signal'] = round(buy_price, 2)
+        data.at[idx, 'StopLoss'] = round(sl, 2)
+        data.at[idx, 'Target'] = round(tp, 2)
+
+    # ---------------- Save ----------------
+    data = data.loc[data['Date'] >= start_date]
+    data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
+
+    print(f"✅ Processed {symbol} — Fresh EMA alignment (40 bars) + EMA20 pullback strategy")
+
+
+##################################################################################################
+def start_processing_symbols(enctoken, symbols_file, from_date, to_date):
+    with open('./symbols/' + symbols_file, 'r') as file:
+        stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]
+
+    total_stocks = len(stocks)
+    print(f"Total number of stocks: {total_stocks}")
+
+    def process_stock(stock):
+        try:
+            mark_signals(enctoken, stock, from_date, to_date)
+            return f"✅ {stock} done"
+        except Exception as e:
+            return f"❌ {stock} failed: {e}"
+
+    # Parallel execution
+    start_time = time.time()
+    max_threads = min(10, total_stocks)  # Safe for network I/O
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+        results = list(executor.map(process_stock, stocks))
+
+    for res in results:
+        print(res)
+
+    print(f"\n✅ Completed {total_stocks} stocks in {time.time() - start_time:.2f}s")
+    print("Now will start Trade...")
+    time.sleep(0.25)
+
+
+#################################
+#enctoken = "FPJqvhe2c14OihE5T8+sFL9bKCDQFyfnavPrnwNLX4FNpgdcw3FclDnpyaZsjfSKBRvjYODB3yresECfMFbRjl4jOH2l0VEAcruG4sJDO/w1UWIOpnowzA=="
 # Read the configuration file
 config = configparser.ConfigParser()
 config.read('config.cfg')
@@ -421,7 +638,8 @@ config.read('config.cfg')
 # Extract variables from the configuration file
 symbols_file = config['trade_symbol']['symbols_file']
 create_chart = config.getboolean('trade_symbol', 'create_chart')
-
+enctoken = config['trade_symbol']['enc_token']
+time_frame = config['trade_symbol']['time_frame']
 from_date = config['time_management']['from_date']
 to_date = config['time_management']['to_date']
 
@@ -432,7 +650,7 @@ target_percentage = float(config['risk_management']['target_percentage'])
 stop_loss_percentage = float(config['risk_management']['stop_loss_percentage'])
 charges_percentage = float(config['risk_management']['charges_percentage'])
 cleanup_logs = config.getboolean('house_keeping', 'cleanup_logs')
-#######################
+# condition = config['trade_logic']['condition']
 ##############
 symbols_type = symbols_file.split('.')[0]
 Reports_Dir = f'{symbols_type}_Reports_{from_date}_to_{to_date}'
@@ -442,54 +660,15 @@ Master_Dir = f'{symbols_type}_Master_{from_date}_to_{to_date}'
 cvs_data_dir = f'{symbols_type}_Cvs_Data_{from_date}_to_{to_date}'
 cvs_raw_data = f'{symbols_type}_Raw_Data_{from_date}_to_{to_date}'
 
-##############
-create_directory(symbols_type, from_date, to_date)
-
-# Read the date reference file
-get_stock_for_date_refrence(cvs_raw_data, from_date, to_date)
-file_list = [f'{cvs_raw_data}/stock_date_ref.csv']
-copy_specific_files(file_list, cvs_data_dir)
-date_ref_df = pd.read_csv(f'{cvs_data_dir}/stock_date_ref.csv')
-dates = date_ref_df['Date'].tolist()
-
 # Initialize variables
 active_positions = []
 capital_per_stock = capital / no_of_stock_to_trade
 portfolio = {}
 trade_report = {}
 final_capital = capital
-
-# Process each date in the date reference file
-for date in dates:
-    process_date(date)
-
-# Save each stock's trade report to a separate CSV file
-for symbol, trades in trade_report.items():
-    report_df = pd.DataFrame(trades)
-    if not report_df.empty:
-        report_df.to_csv(f'{Reports_Dir}/{symbol}_trade_report.csv', index=False)
-
-# Print the final capital
-print(f"Final capital: {final_capital}")
-
-# Initialize summary list
-all_summaries = []
-
-# Iterate over each stock's trade report and calculate summary
-for report_file in glob.glob(f"{Reports_Dir}/*.csv"):
-    symbol = os.path.basename(report_file).replace('_trade_report.csv', '')
-    df = pd.read_csv(report_file)
-    summary = calculate_summary_per_stock(symbol, df.to_dict('records'), Summary_Dir)
-    all_summaries.append(summary)
-
-# Print confirmation
-print("Stock summaries created successfully.")
-
-# Call function to create the Master_no_Compound_sce_5.csv file
-create_master_file(Summary_Dir,  from_date, to_date, capital)
-# Clean up logs if necessary
-if cleanup_logs:
-    for log_file in glob.glob('*.log'):
-        os.remove(log_file)
-
+##############
+create_directory(symbols_type, from_date, to_date)
+start_processing_symbols(enctoken, symbols_file, from_date, to_date)
+get_stock_for_reference_date(enctoken, cvs_data_dir, cvs_raw_data, from_date, to_date)
+procee_final_report(Reports_Dir)
 draw_down_chart()

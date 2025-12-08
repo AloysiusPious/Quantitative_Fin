@@ -3,86 +3,124 @@ from matplotlib.offsetbox import AnchoredText
 from swing_util import *
 import concurrent.futures
 import time
-import ta
+import talib
 
 
 def draw_down_chart():
     all_trades = []
+
+    # ---- Load all CSV files and merge ----
     if os.path.isdir(Reports_Dir) and os.listdir(Reports_Dir):
         for filename in os.listdir(Reports_Dir):
             if filename.endswith(".csv"):
                 filepath = os.path.join(Reports_Dir, filename)
                 df = pd.read_csv(filepath, parse_dates=['Buy Date', 'Exited Date'])
                 all_trades.append(df)
+
         all_trades = pd.concat(all_trades, ignore_index=True)
         all_trades = all_trades.sort_values(by='Buy Date')
 
-        # Calculate cumulative profit
+        # ---- Capital Computation ----
         all_trades['Cumulative Profit'] = all_trades['Profit Amount'].cumsum()
-
-        # Calculate capital over time
         all_trades['Capital'] = capital + all_trades['Cumulative Profit']
 
-        # Fetch Nifty 50 data within the specified date range
-        nifty50_data = get_nifty50_data(from_date, from_date)
-        #nifty50_data = fetch_kite_data(enctoken, "NIFTY 50", from_date, to_date, interval='day')
+        # Ensure dates are datetime
+        all_trades['Buy Date'] = pd.to_datetime(all_trades['Buy Date'])
 
-        # Calculate the percentage increase
+        file_path = f'{cvs_raw_data}/nifty_50.csv'
+
+        # ---------------- Load or Download ----------------
+        if not os.path.exists(file_path):
+            # ---- Fetch Nifty 50 data ----
+            nifty50_data = fetch_kite_data(enctoken, "NIFTY 50", from_date, to_date, interval=time_frame)
+            nifty50_data.to_csv(file_path, index=False)
+        nifty50_data = pd.read_csv(file_path)
+        # Fix Nifty date column and set index
+        nifty50_data['Date'] = pd.to_datetime(nifty50_data['Date'])
+        nifty50_data.set_index('Date', inplace=True)
+
+        # ---- Calculate returns ----
         final_capital = all_trades['Capital'].iloc[-1]
         percentage_increase = ((final_capital - capital) / capital) * 100
 
-        # Create a figure and a set of subplots
+        # ---- Create Plot ----
         fig, ax1 = plt.subplots(figsize=(14, 7))
 
-        # Plotting the capital growth
-        ax1.plot(all_trades['Buy Date'], all_trades['Capital'], marker='', linestyle='-', color='b',
-                 label='Capital Over Time')
-        ax1.annotate(f'Start: ₹{capital}', xy=(all_trades['Buy Date'].iloc[0], capital),
-                     xytext=(all_trades['Buy Date'].iloc[0], capital),
-                     arrowprops=dict(facecolor='green', shrink=0.05))
-        ax1.annotate(f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
-                     xy=(all_trades['Buy Date'].iloc[-1], final_capital),
-                     xytext=(all_trades['Buy Date'].iloc[-1], final_capital),
-                     arrowprops=dict(facecolor='red', shrink=0.05))
+        # Capital growth line
+        ax1.plot(
+            all_trades['Buy Date'],
+            all_trades['Capital'],
+            linestyle='-',
+            color='b',
+            label='Capital Over Time'
+        )
 
-        # Set labels for the first y-axis
+        # Start annotation
+        ax1.annotate(
+            f'Start: ₹{capital}',
+            xy=(all_trades['Buy Date'].iloc[0], capital),
+            xytext=(all_trades['Buy Date'].iloc[0], capital * 1.01),
+            arrowprops=dict(facecolor='green', shrink=0.05)
+        )
+
+        # End annotation
+        ax1.annotate(
+            f'End: ₹{final_capital:.2f} ({percentage_increase:.2f}%)',
+            xy=(all_trades['Buy Date'].iloc[-1], final_capital),
+            xytext=(all_trades['Buy Date'].iloc[-1], final_capital * 1.01),
+            arrowprops=dict(facecolor='red', shrink=0.05)
+        )
+
+        # Axis labels
         ax1.set_xlabel('Date')
         ax1.set_ylabel('Capital (₹)', color='b')
         ax1.tick_params(axis='y', labelcolor='b')
         ax1.legend(loc='upper left')
 
-        # Create a second y-axis to plot the Nifty 50 index
+        # ---- Nifty 50 plot on second axis ----
         ax2 = ax1.twinx()
-        ax2.plot(nifty50_data.index, nifty50_data['Close'], linestyle='--', color='orange', label='Nifty 50')
+        ax2.plot(
+            nifty50_data.index,
+            nifty50_data['Close'],
+            linestyle='--',
+            color='orange',
+            label='Nifty 50'
+        )
         ax2.set_ylabel('Nifty 50 Index', color='orange')
         ax2.tick_params(axis='y', labelcolor='orange')
         ax2.legend(loc='upper center')
 
-        # Add grid, title, and layout settings
+        # ---- Chart styling ----
         plt.title('Capital Growth Over Time and Nifty 50 Index')
         fig.tight_layout()
         plt.grid(True)
 
-        # Adjust text box to fit inside the chart window
-        # wrapped_condition = condition_chart.replace(" and ", " and\n")
+        # ---- Text Box with parameters ----
         textstr = '\n'.join((
             f'capital = {capital}',
             f'no_of_stock_to_trade = {no_of_stock_to_trade}',
             f'compound = {compound}',
             f'target_percentage = {target_percentage}',
             f'stop_loss_percentage = {stop_loss_percentage}',
-            # f'trade_Logic:\n{wrapped_condition}'
         ))
 
-        anchored_text = AnchoredText(textstr, loc='lower right', frameon=True, bbox_to_anchor=(1, 0.15),
-                                     bbox_transform=ax1.transAxes, prop=dict(size=8))  # Reduce font size to 8
-        anchored_text.patch.set_boxstyle("round,pad=0.5,rounding_size=0.5")
-        ax1.add_artist(anchored_text)
+        anchored_text = AnchoredText(
+            textstr,
+            loc='lower right',
+            frameon=True,
+            bbox_to_anchor=(1, 0.15),
+            bbox_transform=ax1.transAxes,
+            prop=dict(size=8)
+        )
 
-        # Save the plot
+        #anchored_text.patch.set_boxstyle("round,pad=0.5,rounding_size=0.5")
+        #ax1.add_artist(anchored_text)
+
+        # ---- Save and show ----
         plt.savefig(f'{Charts_Dir}/draw_down_{symbols_type}_{from_date}_to_{to_date}.png')
         plt.show()
         plt.close()
+
 
 
 def create_master_file(summary_dir, from_date, to_date, capital):
@@ -367,46 +405,27 @@ def process_date(date, date_ref_df, trade_report):
 
                         if compound:
                             capital_per_stock = final_capital / no_of_stock_to_trade
-def start_processing_symbols(enctoken, symbols_file, from_date, to_date):
-    with open('./symbols/' + symbols_file, 'r') as file:
-        stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]
 
-    total_stocks = len(stocks)
-    print(f"Total number of stocks: {total_stocks}")
-
-    def process_stock(stock):
-        try:
-            mark_signals(enctoken, stock, from_date, to_date)
-            return f"✅ {stock} done"
-        except Exception as e:
-            return f"❌ {stock} failed: {e}"
-
-    # Parallel execution
-    start_time = time.time()
-    max_threads = min(10, total_stocks)  # Safe for network I/O
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        results = list(executor.map(process_stock, stocks))
-
-    for res in results:
-        print(res)
-
-    print(f"\n✅ Completed {total_stocks} stocks in {time.time() - start_time:.2f}s")
-    print("Now will start Trade...")
-    time.sleep(0.25)
 
 ######################### ACTUAL TRADE BEGINS #############################
 
 def get_stock_for_reference_date(enctoken, cvs_data_dir, cvs_raw_data, start_date, end_date):
     # Read the date reference file
-    #fetch_kite_data(cvs_raw_data, enctoken, "TCS", start_date, end_date, interval='day')
-    get_stock_for_date_refrence(cvs_raw_data, from_date, to_date)
-    file_list = [f'{cvs_raw_data}/stock_date_ref.csv']
-    copy_specific_files(file_list, cvs_data_dir)
-    date_ref_df = pd.read_csv(f'{cvs_data_dir}/stock_date_ref.csv')
+    nifty50_data = fetch_kite_data(enctoken, "TCS", start_date, end_date, interval=time_frame)
+    # Extract only the Date column & ensure date format
+    date_ref = pd.DataFrame({
+        'Date': pd.to_datetime(nifty50_data['Date']).dt.date
+    })
+    # Drop empty rows (usually none)
+    date_ref.dropna(inplace=True)
+    # Save to CSV
+    date_ref.to_csv(f"{cvs_raw_data}/stock_date_ref.csv", index=False)
+    date_ref_df = pd.read_csv(f'{cvs_raw_data}/stock_date_ref.csv')
     dates = date_ref_df['Date'].tolist()
     # Process each date in the date reference file
     for date in dates:
         process_date(date, date_ref_df, trade_report)
+
 
 def procee_final_report(Reports_Dir):
     ###### Process Final Report
@@ -440,13 +459,20 @@ def procee_final_report(Reports_Dir):
         for log_file in glob.glob('*.log'):
             os.remove(log_file)
 
+# Globals: cvs_raw_data, cvs_data_dir, time_frame='daily', fetch_kite_data
+# New: Fetch Nifty data once for RS comparison (assume symbol='NIFTY' for index)
+import pandas as pd
+import numpy as np
+import os
+import talib  # Optional for EMA; pandas works too
+
 def mark_signals(enctoken, symbol, start_date, end_date):
     file_path = f'{cvs_raw_data}/{symbol}.csv'
 
+    # Load or Download
     if not os.path.exists(file_path):
         print(f"{symbol} Not found locally — downloading ...")
-
-        data = fetch_kite_data(enctoken, symbol, start_date, end_date, interval='day')
+        data = fetch_kite_data(enctoken, symbol, start_date, end_date, interval=time_frame)
         if data is None or data.empty:
             print(f"No data for {symbol}")
             return
@@ -455,61 +481,74 @@ def mark_signals(enctoken, symbol, start_date, end_date):
         print(f"{symbol} found in local and processing it ...")
         data = pd.read_csv(file_path)
 
-    # --- Indicators ---
-    data['Low_252min'] = data['Low'].shift(1).rolling(window=252, min_periods=252).min()
-    # --- RSI ---
-    delta = data['Close'].diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-    data['RSI'] = 100 - (100 / (1 + rs))
-    cond_rsi = (data['RSI'] > 30) & (data['RSI'] < 60)
-    # --- MACD ---
-    ema12 = data['Close'].ewm(span=12, adjust=False).mean()
-    ema26 = data['Close'].ewm(span=26, adjust=False).mean()
-    data['MACD_Line'] = ema12 - ema26
-    #data['MACD_Signal'] = data['MACD_Line'].ewm(span=9, adjust=False).mean()
-    #data['MACD_Slope'] = data['MACD_Line'].diff()
-    cond_macd_turn = (data['MACD_Line'] < 0) #& (data['MACD_Line'].diff() > 0)
+    # Prep
+    data = data.sort_values('Date').reset_index(drop=True)
+    data['Date'] = pd.to_datetime(data['Date'])
+
+    # 20-day EMA
+    data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
+
+    # % Below EMA (negative = dip; more negative = better buy candidate)
+    data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
+
+    # Initialize columns (ensures they exist even without signals)
+    data['Buy_Signal'] = np.nan
+    data['StopLoss'] = np.nan
+    data['Avg_Down_Level'] = np.nan
+    data['Target'] = np.nan
+
+    # Buy Signal: Placeholder (set True if ranked top 5 across Nifty50; for now, flag if < -2% for testing)
+    cond_buy = data['Pct_Below_20EMA'] < -2
+    data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
+
+    # Set SL (-10% from buy/entry), avg down trigger, and target (+8% from entry)
+    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90  # Soft -10% SL
+    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97  # -3% trigger
+    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08  # +8% from entry
+
+    # Drop early NaNs
+    data = data.dropna(subset=['EMA20']).reset_index(drop=True)
+
+    # Save with key metric
+    data = data[data['Date'] >= pd.to_datetime(start_date)]
+    data.to_csv(f"{cvs_data_dir}/{symbol}_SHOP.csv", index=False)
+
+    latest_pct = data['Pct_Below_20EMA'].iloc[-1] if not data.empty else np.nan
+    num_signals = data['Buy_Signal'].notna().sum()
+    print(f"✅ Processed {symbol} — Nifty SHOP: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
 
 
-    # --- Conditions ---
-    # Calculate the lowest low of the past 5 days
-    data['Low_5'] = data['Low'].rolling(window=5).min()
-    # Condition: past 5 days lowest low near 252-day low
-    #tolerance = min(0.02, data['ATR'].iloc[-1] / data['Close'].iloc[-1])
-    tolerance = 0.015 # example: 1.5%
-    cond_near_low = (data['Low_5'] >= data['Low_252min']) & (data['Low_5'] <= data['Low_252min'] * (1 + tolerance))
+##################################################################################################
+def start_processing_symbols(enctoken, symbols_file, from_date, to_date):
+    with open('./symbols/' + symbols_file, 'r') as file:
+        stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]
 
-    # Optional: capture even if yesterday's close not above previous close
-    cond_close = data["Close"] > data["Low"].shift(1)  # close above yesterday’s low
+    total_stocks = len(stocks)
+    print(f"Total number of stocks: {total_stocks}")
 
+    def process_stock(stock):
+        try:
+            mark_signals(enctoken, stock, from_date, to_date)
+            return f"✅ {stock} done"
+        except Exception as e:
+            return f"❌ {stock} failed: {e}"
 
+    # Parallel execution
+    start_time = time.time()
+    max_threads = min(10, total_stocks)  # Safe for network I/O
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+        results = list(executor.map(process_stock, stocks))
 
-    # --- Combine and Buy Signal ---
-    cond_buy = cond_close &  cond_near_low & cond_macd_turn & cond_rsi
-    data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close'].round(2)
-    #############################################
-    #--- Targets and Stoploss ---
-    data.loc[cond_buy, 'StopLoss'] = 0.0
-    data.loc[cond_buy, 'Target'] = data['Buy_Signal'] * 10
-    #############################################
-    #stop_loss_pct = 0  # percent
-    #data.loc[cond_buy, 'StopLoss'] = data['Low_5'] * (1 - stop_loss_pct / 100)
-    #target_pct = 10  # percent
-    #data.loc[cond_buy, 'Target'] = data['Buy_Signal'] * (1 + target_pct / 100)
-    #############################################
+    for res in results:
+        print(res)
 
-    # --- Filter & Save ---
-    data = data.loc[data['Date'] >= start_date]
-    data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
-    print(f"✅ Processed {symbol} (MACD < -2, RSI 30–50)")
+    print(f"\n✅ Completed {total_stocks} stocks in {time.time() - start_time:.2f}s")
+    print("Now will start Trade...")
+    time.sleep(0.25)
 
 
 #################################
-enctoken = "lHzsiBNAEhEfRgs8FHvii4ShXwj2+eAe4gUju9y0TPd9UOpforkDDEILPf5+ZDLFZOwO6RzDYQ2PnjSPA53Z7WLko/ulPv4Pk2B5AjSD1xoO1s8e46oXsA=="
+#enctoken = "FPJqvhe2c14OihE5T8+sFL9bKCDQFyfnavPrnwNLX4FNpgdcw3FclDnpyaZsjfSKBRvjYODB3yresECfMFbRjl4jOH2l0VEAcruG4sJDO/w1UWIOpnowzA=="
 # Read the configuration file
 config = configparser.ConfigParser()
 config.read('config.cfg')
@@ -517,7 +556,8 @@ config.read('config.cfg')
 # Extract variables from the configuration file
 symbols_file = config['trade_symbol']['symbols_file']
 create_chart = config.getboolean('trade_symbol', 'create_chart')
-
+enctoken = config['trade_symbol']['enc_token']
+time_frame = config['trade_symbol']['time_frame']
 from_date = config['time_management']['from_date']
 to_date = config['time_management']['to_date']
 

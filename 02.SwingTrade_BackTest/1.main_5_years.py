@@ -1,7 +1,6 @@
 import configparser
 from matplotlib.offsetbox import AnchoredText
 from swing_util import *
-from stratesgies import *
 import concurrent.futures
 import time
 import ta
@@ -33,7 +32,7 @@ def draw_down_chart():
         # ---------------- Load or Download ----------------
         if not os.path.exists(file_path):
             # ---- Fetch Nifty 50 data ----
-            nifty50_data = fetch_kite_data(enctoken, "NIFTY 50", from_date, to_date, interval='day')
+            nifty50_data = fetch_kite_data(enctoken, "NIFTY 50", from_date, to_date, interval=time_frame)
             nifty50_data.to_csv(file_path, index=False)
         nifty50_data = pd.read_csv(file_path)
         # Fix Nifty date column and set index
@@ -412,7 +411,7 @@ def process_date(date, date_ref_df, trade_report):
 
 def get_stock_for_reference_date(enctoken, cvs_data_dir, cvs_raw_data, start_date, end_date):
     # Read the date reference file
-    nifty50_data = fetch_kite_data(enctoken, "TCS", start_date, end_date, interval='day')
+    nifty50_data = fetch_kite_data(enctoken, "TCS", start_date, end_date, interval=time_frame)
     # Extract only the Date column & ensure date format
     date_ref = pd.DataFrame({
         'Date': pd.to_datetime(nifty50_data['Date']).dt.date
@@ -421,10 +420,6 @@ def get_stock_for_reference_date(enctoken, cvs_data_dir, cvs_raw_data, start_dat
     date_ref.dropna(inplace=True)
     # Save to CSV
     date_ref.to_csv(f"{cvs_raw_data}/stock_date_ref.csv", index=False)
-
-    #get_stock_for_date_refrence(cvs_raw_data, from_date, to_date)
-    #file_list = [f'{cvs_raw_data}/stock_date_ref.csv']
-    #copy_specific_files(file_list, cvs_data_dir)
     date_ref_df = pd.read_csv(f'{cvs_raw_data}/stock_date_ref.csv')
     dates = date_ref_df['Date'].tolist()
     # Process each date in the date reference file
@@ -464,18 +459,12 @@ def procee_final_report(Reports_Dir):
         for log_file in glob.glob('*.log'):
             os.remove(log_file)
 
-
 def mark_signals(enctoken, symbol, start_date, end_date):
-    import os
-    import numpy as np
-    import pandas as pd
-    import talib
-
     file_path = f'{cvs_raw_data}/{symbol}.csv'
 
-    # ---------------- Load or Download ----------------
     if not os.path.exists(file_path):
         print(f"{symbol} Not found locally — downloading ...")
+
         data = fetch_kite_data(enctoken, symbol, start_date, end_date, interval='day')
         if data is None or data.empty:
             print(f"No data for {symbol}")
@@ -485,129 +474,58 @@ def mark_signals(enctoken, symbol, start_date, end_date):
         print(f"{symbol} found in local and processing it ...")
         data = pd.read_csv(file_path)
 
-    # Ensure Date is sorted ascending and index is integer position
-    data = data.sort_values('Date').reset_index(drop=True)
+    # --- Indicators ---
+    data['Low_252min'] = data['Low'].shift(1).rolling(window=252, min_periods=252).min()
+    # --- RSI ---
+    delta = data['Close'].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    data['RSI'] = 100 - (100 / (1 + rs))
+    cond_rsi = (data['RSI'] > 30) & (data['RSI'] < 60)
+    # --- MACD ---
+    ema12 = data['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = data['Close'].ewm(span=26, adjust=False).mean()
+    data['MACD_Line'] = ema12 - ema26
+    #data['MACD_Signal'] = data['MACD_Line'].ewm(span=9, adjust=False).mean()
+    #data['MACD_Slope'] = data['MACD_Line'].diff()
+    cond_macd_turn = (data['MACD_Line'] < 0) #& (data['MACD_Line'].diff() > 0)
 
-    # ---------------- Indicators ----------------
-    # EMAs
-    data['EMA20']  = data['Close'].ewm(span=20,  adjust=False).mean()
-    data['EMA50']  = data['Close'].ewm(span=50,  adjust=False).mean()
-    data['EMA100'] = data['Close'].ewm(span=100, adjust=False).mean()
-    data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
 
-    # ATR (using talib for consistency)
-    data['ATR'] = talib.ATR(data['High'], data['Low'], data['Close'], timeperiod=14)
+    # --- Conditions ---
+    # Calculate the lowest low of the past 5 days
+    data['Low_5'] = data['Low'].rolling(window=5).min()
+    # Condition: past 5 days lowest low near 252-day low
+    #tolerance = min(0.02, data['ATR'].iloc[-1] / data['Close'].iloc[-1])
+    tolerance = 0.015 # example: 1.5%
+    cond_near_low = (data['Low_5'] >= data['Low_252min']) & (data['Low_5'] <= data['Low_252min'] * (1 + tolerance))
 
-    # Volume average for optional filters
-    data['Vol20'] = data['Volume'].rolling(20).mean()
+    # Optional: capture even if yesterday's close not above previous close
+    cond_close = data["Close"] > data["Low"].shift(1)  # close above yesterday’s low
 
-    # ---------------- EMA Alignment & Fresh Crossover Logic ----------------
-    # bullish alignment boolean
-    bullish_cross = (
-        (data['EMA20'] > data['EMA50']) &
-        (data['EMA50'] > data['EMA100']) &
-        (data['EMA100'] > data['EMA200'])
-    )
 
-    bullish_cross = bullish_cross.astype(bool)
-    prev = bullish_cross.shift(1, fill_value=False)
-    became_bullish = bullish_cross & (~prev)
 
-    # Ensure "fresh" means there was NO bullish alignment in the prior 40 bars
-    # We check the rolling max of the shifted bullish_cross over prior 40 bars; if any True existed, rolling max==1.
-    had_bullish_in_prev_40 = bullish_cross.shift(1).rolling(window=40, min_periods=1).max().fillna(0).astype(bool)
-    fresh_bullish_start = became_bullish & (~had_bullish_in_prev_40)
+    # --- Combine and Buy Signal ---
+    cond_buy = cond_close &  cond_near_low & cond_macd_turn & cond_rsi
+    data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close'].round(2)
+    #############################################
+    #--- Targets and Stoploss ---
+    data.loc[cond_buy, 'StopLoss'] = 0.0
+    data.loc[cond_buy, 'Target'] = data['Buy_Signal'] * 10
+    #############################################
+    #stop_loss_pct = 0  # percent
+    #data.loc[cond_buy, 'StopLoss'] = data['Low_5'] * (1 - stop_loss_pct / 100)
+    #target_pct = 10  # percent
+    #data.loc[cond_buy, 'Target'] = data['Buy_Signal'] * (1 + target_pct / 100)
+    #############################################
 
-    # ---------------- First Pullback to EMA20 Logic ----------------
-    # Pullback condition: price dips to EMA20 zone (within 1%) and still closes above EMA20
-    cond_pullback_zone = (data['Low'] <= data['EMA20'] * 1.01) & (data['Close'] > data['EMA20'])
-
-    # We want the first pullback **after** the fresh bullish start.
-    # Create a series marking the index of the most recent fresh_bullish_start up to each row:
-    fresh_idx = pd.Series(np.nan, index=data.index)
-    fresh_points = fresh_bullish_start[fresh_bullish_start].index.tolist()
-    if fresh_points:
-        # propagate the most recent fresh_start index forward
-        last = np.nan
-        fi_iter = iter(fresh_points)
-        next_fp = next(fi_iter, None)
-        for i in data.index:
-            if next_fp is not None and i == next_fp:
-                last = next_fp
-                next_fp = next(fi_iter, None)
-            fresh_idx.at[i] = last
-    # fresh_idx holds index of the latest fresh bullish start (or NaN)
-
-    # A pullback qualifies if:
-    # - cond_pullback_zone is True on that row
-    # - AND there exists a fresh_idx for which fresh_idx < current index (i.e., the fresh alignment happened earlier)
-    cond_has_fresh = ~fresh_idx.isna()
-    cond_fresh_after = False
-    # build condition: fresh alignment must occur before current bar (not same bar)
-    cond_fresh_after = cond_has_fresh & (fresh_idx.astype(float) < data.index.astype(float))
-
-    # Final pullback-after-fresh condition
-    cond_first_pullback_after_fresh = cond_pullback_zone & cond_fresh_after
-
-    # Optional additional filter: bullish candle on pullback bar (close>open)
-    cond_bullish_candle = data['Close'] > data['Open']
-    cond_volume_ok = data['Volume'] > (1.0 * data['Vol20'])  # keep volume optional (1x average)
-
-    # Combine final BUY condition (you can tune cond_volume_ok and cond_bullish_candle)
-    cond_buy = cond_first_pullback_after_fresh & cond_bullish_candle & cond_volume_ok
-
-    # ---------------- Stop Loss (previous swing low) & Target (3R) ----------------
-    # Define previous swing low as min of last 5 bars before the entry bar (shifted window)
-    swing_lookback = 5
-    data['PrevSwingLow'] = data['Low'].rolling(window=swing_lookback, min_periods=1).apply(
-        lambda x: np.nan if len(x) < swing_lookback else x[:-0].min(), raw=False
-    )  # we'll override with a safer method below
-
-    # Simpler previous swing low (min over last 5 bars prior to current bar)
-    data['PrevSwingLow'] = data['Low'].shift(1).rolling(window=swing_lookback, min_periods=1).min()
-
-    # Initialize output columns
-    data['Buy_Signal'] = np.nan
-    data['StopLoss'] = np.nan
-    data['Target'] = np.nan
-
-    for idx in data[cond_buy].index:
-        buy_price = data.at[idx, 'Close']
-        swing_low = data.at[idx, 'PrevSwingLow']
-        atr = data.at[idx, 'ATR'] if not np.isnan(data.at[idx, 'ATR']) else 0.0
-
-        # Primary SL: previous swing low (if available) minus small buffer (0.25*ATR)
-        if not np.isnan(swing_low):
-            sl = swing_low - 0.25 * atr
-        else:
-            # fallback SL: buy - 1.5 * ATR
-            sl = buy_price - 1.5 * atr
-
-        # ensure SL is below buy price and at least 1.0*ATR away (meaningful)
-        min_dist = 1.0 * atr
-        if (buy_price - sl) < min_dist:
-            sl = buy_price - min_dist
-
-        # if SL >= buy (edge case), set fallback
-        if sl >= buy_price:
-            sl = buy_price - min_dist
-
-        risk = buy_price - sl
-        # Skip trade if risk is zero or negative
-        if risk <= 0 or np.isnan(risk):
-            continue
-
-        tp = buy_price + 3.0 * risk  # 3R target
-
-        data.at[idx, 'Buy_Signal'] = round(buy_price, 2)
-        data.at[idx, 'StopLoss'] = round(sl, 2)
-        data.at[idx, 'Target'] = round(tp, 2)
-
-    # ---------------- Save ----------------
+    # --- Filter & Save ---
     data = data.loc[data['Date'] >= start_date]
     data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
+    print(f"✅ Processed {symbol} (MACD < -2, RSI 30–50)")
 
-    print(f"✅ Processed {symbol} — Fresh EMA alignment (40 bars) + EMA20 pullback strategy")
 
 
 ##################################################################################################
@@ -640,7 +558,7 @@ def start_processing_symbols(enctoken, symbols_file, from_date, to_date):
 
 
 #################################
-enctoken = "FPJqvhe2c14OihE5T8+sFL9bKCDQFyfnavPrnwNLX4FNpgdcw3FclDnpyaZsjfSKBRvjYODB3yresECfMFbRjl4jOH2l0VEAcruG4sJDO/w1UWIOpnowzA=="
+#enctoken = "FPJqvhe2c14OihE5T8+sFL9bKCDQFyfnavPrnwNLX4FNpgdcw3FclDnpyaZsjfSKBRvjYODB3yresECfMFbRjl4jOH2l0VEAcruG4sJDO/w1UWIOpnowzA=="
 # Read the configuration file
 config = configparser.ConfigParser()
 config.read('config.cfg')
@@ -648,7 +566,8 @@ config.read('config.cfg')
 # Extract variables from the configuration file
 symbols_file = config['trade_symbol']['symbols_file']
 create_chart = config.getboolean('trade_symbol', 'create_chart')
-
+enctoken = config['trade_symbol']['enc_token']
+time_frame = config['trade_symbol']['time_frame']
 from_date = config['time_management']['from_date']
 to_date = config['time_management']['to_date']
 
