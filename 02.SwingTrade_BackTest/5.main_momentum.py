@@ -591,8 +591,9 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     data['Avg_Down_Level'] = np.nan
     data['Target'] = np.nan
 
-    # Buy Signal: Placeholder (set True if ranked top 5 across Nifty50; for now, flag if < -2% for testing)
-    cond_buy = (data['Pct_Below_20EMA'] < -2) & (data['Pct_Above_200EMA'] > 2)  #& (data['VIX_Close'] < 25)
+    # Buy Signal: Breakout above 20-day high with volume spike and low VIX
+    data['High_20'] = data['High'].rolling(20).max().shift(1)
+    cond_buy = (data['Close'] > data['High_20']) & (data['Volume'] > data['Volume'].rolling(20).mean() * 1.5) & (data['VIX_Close'] < 20)
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
 
     # Set SL (-10% from buy/entry), avg down trigger, and target (+8% from entry)

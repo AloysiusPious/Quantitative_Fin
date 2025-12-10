@@ -591,14 +591,13 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     data['Avg_Down_Level'] = np.nan
     data['Target'] = np.nan
 
-    # Buy Signal: Placeholder (set True if ranked top 5 across Nifty50; for now, flag if < -2% for testing)
-    cond_buy = (data['Pct_Below_20EMA'] < -2) & (data['Pct_Above_200EMA'] > 2)  #& (data['VIX_Close'] < 25)
+    # Buy Signal: EMA crossover (EMA20 > EMA100 > EMA200) with low VIX for safety
+    cond_buy = (data['EMA20'] > data['EMA100']) & (data['EMA100'] > data['EMA200']) & (data['VIX_Close'] < 20)
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
 
     # Set SL (-10% from buy/entry), avg down trigger, and target (+8% from entry)
     data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90  # Soft -10% SL
     data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97  # -3% trigger
-    #data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08  # +8% from entry
     data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.12  # +12%
 
     # Drop early NaNs

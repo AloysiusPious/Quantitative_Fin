@@ -1,7 +1,6 @@
 import configparser
 from matplotlib.offsetbox import AnchoredText
 from swing_util import *
-from clean_up import *
 import concurrent.futures
 import time
 import talib
@@ -574,44 +573,98 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     data = data.sort_values('Date').reset_index(drop=True)
     data['Date'] = pd.to_datetime(data['Date'])
 
-    # 20-day EMA
+    # Indicators
     data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
-    data['EMA100'] = data['Close'].ewm(span=100, adjust=False).mean()
-    data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
-
-    # % Below EMA (negative = dip; more negative = better buy candidate)
     data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
-    data['Pct_Above_200EMA'] = (data['Close'] - data['EMA200']) / data['EMA200'] * 100
+    data['RSI14'] = talib.RSI(data['Close'], timeperiod=14)
+
     # Load VIX + map to rows
     vix_df = pd.read_csv(vix_file_path, parse_dates=['Date']).set_index('Date')
     data['VIX_Close'] = data['Date'].map(vix_df['Close'])
-    # Initialize columns (ensures they exist even without signals)
+    # --- MACD ---
+    ema12 = data['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = data['Close'].ewm(span=26, adjust=False).mean()
+    data['MACD_Line'] = ema12 - ema26
+    data['MACD_Signal'] = data['MACD_Line'].ewm(span=9, adjust=False).mean()
+    data['MACD_Slope'] = data['MACD_Line'].diff()
+    cond_macd_turn = (data['MACD_Line'] < 0) #& (data['MACD_Line'].diff() > 0)
+    # Columns
     data['Buy_Signal'] = np.nan
     data['StopLoss'] = np.nan
     data['Avg_Down_Level'] = np.nan
     data['Target'] = np.nan
 
-    # Buy Signal: Placeholder (set True if ranked top 5 across Nifty50; for now, flag if < -2% for testing)
-    cond_buy = (data['Pct_Below_20EMA'] < -2) & (data['Pct_Above_200EMA'] > 2)  #& (data['VIX_Close'] < 25)
+    # Buy logic per row
+    cond_buy = (
+        (data['Pct_Below_20EMA'] < -2) &
+        (data['RSI14'] < 40) &
+        (data['VIX_Close'] < 25) &     # VIX filter working NOW
+        cond_macd_turn
+    )
+
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
+    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
+    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97
+    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08
 
-    # Set SL (-10% from buy/entry), avg down trigger, and target (+8% from entry)
-    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90  # Soft -10% SL
-    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97  # -3% trigger
-    #data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08  # +8% from entry
-    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.12  # +12%
+    # Cleanup
+    data = data.dropna(subset=['EMA20', 'RSI14']).reset_index(drop=True)
+    data = data[data['Date'] >= pd.to_datetime(start_date)]
 
-    # Drop early NaNs
-    data = data.dropna(subset=['EMA20']).reset_index(drop=True)
+    # Save output
+    data.to_csv(f"{cvs_data_dir}/{symbol}_SHOP_RSI.csv", index=False)
 
-    # Save with key metric
+    latest_pct = data['Pct_Below_20EMA'].iloc[-1] if not data.empty else np.nan
+    num_signals = data['Buy_Signal'].notna().sum()
+    print(f"✅ Processed {symbol} — SHOP w/ RSI: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
+
+def mark_signals1(enctoken, symbol, start_date, end_date):
+    file_path = f'{cvs_raw_data}/{symbol}.csv'
+
+    # Load or Download
+    if not os.path.exists(file_path):
+        print(f"{symbol} Not found locally — downloading ...")
+        data = fetch_kite_data(enctoken, symbol, start_date, end_date, interval=time_frame)
+        if data is None or data.empty:
+            print(f"No data for {symbol}")
+            return
+        data.to_csv(file_path, index=False)
+    else:
+        print(f"{symbol} found in local and processing it ...")
+        data = pd.read_csv(file_path)
+
+    # Prep
+    data = data.sort_values('Date').reset_index(drop=True)
+    data['Date'] = pd.to_datetime(data['Date'])
+
+    # Indicators
+    data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
+    data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
+    data['RSI14'] = talib.RSI(data['Close'], timeperiod=14)  # Oversold filter
+
+    # Columns
+    data['Buy_Signal'] = np.nan
+    data['StopLoss'] = np.nan
+    data['Avg_Down_Level'] = np.nan
+    data['Target'] = np.nan
+
+    # Buy: Deep dip + oversold
+    cond_buy = (data['Pct_Below_20EMA'] < -2) & (data['RSI14'] < 40)
+    data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
+    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
+    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97
+    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08
+
+    # Drop NaNs
+    data = data.dropna(subset=['EMA20', 'RSI14']).reset_index(drop=True)
+
+    # Save
     data = data[data['Date'] >= pd.to_datetime(start_date)]
     data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
 
     latest_pct = data['Pct_Below_20EMA'].iloc[-1] if not data.empty else np.nan
     num_signals = data['Buy_Signal'].notna().sum()
-    print(f"✅ Processed {symbol} — Nifty SHOP: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
-
+    print(f"✅ Processed {symbol} — SHOP w/ RSI: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
 
 ##################################################################################################
 def start_processing_symbols(enctoken, symbols_file, from_date, to_date):
@@ -661,7 +714,6 @@ no_of_stock_to_trade = int(config['risk_management']['no_of_stock_to_trade'])
 compound = config.getboolean('risk_management', 'compound')
 target_percentage = float(config['risk_management']['target_percentage'])
 stop_loss_percentage = float(config['risk_management']['stop_loss_percentage'])
-risk_per_trade = float(config['risk_management']['risk_per_trade'])
 charges_percentage = float(config['risk_management']['charges_percentage'])
 cleanup_logs = config.getboolean('house_keeping', 'cleanup_logs')
 # condition = config['trade_logic']['condition']
@@ -681,7 +733,6 @@ portfolio = {}
 trade_report = {}
 final_capital = capital
 ##############
-remove_directory()
 create_directory(symbols_type, from_date, to_date)
 get_india_vix_data()
 start_processing_symbols(enctoken, symbols_file, from_date, to_date)

@@ -461,17 +461,6 @@ def procee_final_report(Reports_Dir):
 
 # Globals: cvs_raw_data, cvs_data_dir, time_frame='daily', fetch_kite_data
 # New: Fetch Nifty data once for RS comparison (assume symbol='NIFTY' for index)
-import pandas as pd
-import numpy as np
-import os
-import talib  # Optional for EMA; pandas works too
-
-import pandas as pd
-import numpy as np
-import os
-import talib  # For RSI; fallback if needed
-
-# Globals: cvs_raw_data, cvs_data_dir, time_frame='daily', fetch_kite_data
 
 def mark_signals(enctoken, symbol, start_date, end_date):
     file_path = f'{cvs_raw_data}/{symbol}.csv'
@@ -492,34 +481,37 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     data = data.sort_values('Date').reset_index(drop=True)
     data['Date'] = pd.to_datetime(data['Date'])
 
-    # Indicators
+    # 20-day EMA
     data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
-    data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
-    data['RSI14'] = talib.RSI(data['Close'], timeperiod=14)  # Oversold filter
 
-    # Columns
+    # % Below EMA (negative = dip; more negative = better buy candidate)
+    data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
+
+    # Initialize columns (ensures they exist even without signals)
     data['Buy_Signal'] = np.nan
     data['StopLoss'] = np.nan
     data['Avg_Down_Level'] = np.nan
     data['Target'] = np.nan
 
-    # Buy: Deep dip + oversold
-    cond_buy = (data['Pct_Below_20EMA'] < -2) & (data['RSI14'] < 40)
+    # Buy Signal: Placeholder (set True if ranked top 5 across Nifty50; for now, flag if < -2% for testing)
+    cond_buy = data['Pct_Below_20EMA'] < -2
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
-    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
-    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97
-    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08
 
-    # Drop NaNs
-    data = data.dropna(subset=['EMA20', 'RSI14']).reset_index(drop=True)
+    # Set SL (-10% from buy/entry), avg down trigger, and target (+8% from entry)
+    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90  # Soft -10% SL
+    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97  # -3% trigger
+    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08  # +8% from entry
 
-    # Save
+    # Drop early NaNs
+    data = data.dropna(subset=['EMA20']).reset_index(drop=True)
+
+    # Save with key metric
     data = data[data['Date'] >= pd.to_datetime(start_date)]
-    data.to_csv(f"{cvs_data_dir}/{symbol}_SHOP_RSI.csv", index=False)
+    data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
 
     latest_pct = data['Pct_Below_20EMA'].iloc[-1] if not data.empty else np.nan
     num_signals = data['Buy_Signal'].notna().sum()
-    print(f"✅ Processed {symbol} — SHOP w/ RSI: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
+    print(f"✅ Processed {symbol} — Nifty SHOP: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
 
 
 ##################################################################################################
