@@ -1,6 +1,7 @@
 import configparser
 from matplotlib.offsetbox import AnchoredText
 from swing_util import *
+from clean_up import *
 import concurrent.futures
 import time
 import talib
@@ -568,77 +569,49 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     else:
         print(f"{symbol} found in local and processing it ...")
         data = pd.read_csv(file_path)
+
     # Prep
     data = data.sort_values('Date').reset_index(drop=True)
     data['Date'] = pd.to_datetime(data['Date'])
-    # ← Monthly Chart  Begin HERE →#########################################
-    # Monthly analysis
-    monthly = data.resample('ME', on='Date').agg({
-        'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last'
-    }).dropna()
-    monthly['Prev_Month_Red'] = (monthly['Close'] < monthly['Open']).shift(1)
-    data = data.sort_values('Date').set_index('Date')
-    data['Month_Start'] = data.index.to_period('M').start_time
-    # --- FIX: handle the map result BEFORE fillna ---
-    mapped = data['Month_Start'].map(
-        monthly.set_index(monthly.index.to_period('M').start_time)['Prev_Month_Red']
-    )
-    mapped = mapped.astype('boolean')  # This ensures it's a proper boolean dtype
-    data['Prev_Month_Was_Red'] = (
-        mapped.infer_objects()
-        .fillna(False)
-        .astype(bool)
-    )
-    data['Trading_Day_of_Month'] = data.groupby(data.index.to_period('M')).cumcount() + 1
-    data = data.reset_index()
-    block_first_5 = data['Prev_Month_Was_Red'] & (data['Trading_Day_of_Month'] <= 5)
-    # ← Monthly Chart END HERE →#########################################
 
-    # Indicators
+    # 20-day EMA
     data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
+    data['EMA100'] = data['Close'].ewm(span=100, adjust=False).mean()
     data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
-    data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
-    data['RSI14'] = talib.RSI(data['Close'], timeperiod=14)
 
+    # % Below EMA (negative = dip; more negative = better buy candidate)
+    data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
+    data['Pct_Above_200EMA'] = (data['Close'] - data['EMA200']) / data['EMA200'] * 100
     # Load VIX + map to rows
     vix_df = pd.read_csv(vix_file_path, parse_dates=['Date']).set_index('Date')
     data['VIX_Close'] = data['Date'].map(vix_df['Close'])
-    # --- MACD ---
-    ema12 = data['Close'].ewm(span=12, adjust=False).mean()
-    ema26 = data['Close'].ewm(span=26, adjust=False).mean()
-    data['MACD_Line'] = ema12 - ema26
-    data['MACD_Signal'] = data['MACD_Line'].ewm(span=9, adjust=False).mean()
-    data['MACD_Slope'] = data['MACD_Line'].diff()
-    cond_macd_turn = (data['MACD_Line'] < 0) #& (data['MACD_Line'].diff() > 0)
-    # Columns
+    # Initialize columns (ensures they exist even without signals)
     data['Buy_Signal'] = np.nan
     data['StopLoss'] = np.nan
     data['Avg_Down_Level'] = np.nan
     data['Target'] = np.nan
-    #base_cond 2017-2021 ==> 80%, DD:11%
-    #base_cond & cond_buy_2 2017-2021==> 81% , DD :11%
-    # Buy logic per row
-    base_cond = ((data['EMA20'] > data['EMA200']) & (data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30))
-    cond_buy_1 = (data['RSI14'] < 40)
-    cond_buy_2 = (~block_first_5)  # ← No trades in first 5 days after red month
-    cond_buy = base_cond #& cond_buy_2 #& cond_buy_2 & #cond_buy_3
 
+    # Buy Signal: Low VIX (<20) + breakout above EMA20 with volume
+    data['Vol_Avg'] = data['Volume'].rolling(20).mean()
+    cond_buy = (data['VIX_Close'] < 20) & (data['Close'] > data['EMA20']) & (data['Volume'] > data['Vol_Avg'] * 1.5)
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
-    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
-    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97
-    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08
 
-    # Cleanup
-    data = data.dropna(subset=['EMA20', 'RSI14']).reset_index(drop=True)
+    # Set SL (-10% from buy/entry), avg down trigger, and target (+8% from entry)
+    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90  # Soft -10% SL
+    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97  # -3% trigger
+    #data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08  # +8% from entry
+    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.12  # +12%
+
+    # Drop early NaNs
+    data = data.dropna(subset=['EMA20']).reset_index(drop=True)
+
+    # Save with key metric
     data = data[data['Date'] >= pd.to_datetime(start_date)]
-
-    # Save output
     data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
 
     latest_pct = data['Pct_Below_20EMA'].iloc[-1] if not data.empty else np.nan
     num_signals = data['Buy_Signal'].notna().sum()
-    print(f"✅ Processed {symbol} — SHOP w/ RSI: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
-
+    print(f"✅ Processed {symbol} — Nifty SHOP: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
 
 
 ##################################################################################################
@@ -689,8 +662,8 @@ no_of_stock_to_trade = int(config['risk_management']['no_of_stock_to_trade'])
 compound = config.getboolean('risk_management', 'compound')
 target_percentage = float(config['risk_management']['target_percentage'])
 stop_loss_percentage = float(config['risk_management']['stop_loss_percentage'])
-charges_percentage = float(config['risk_management']['charges_percentage'])
 risk_per_trade = float(config['risk_management']['risk_per_trade'])
+charges_percentage = float(config['risk_management']['charges_percentage'])
 cleanup_logs = config.getboolean('house_keeping', 'cleanup_logs')
 # condition = config['trade_logic']['condition']
 ##############
