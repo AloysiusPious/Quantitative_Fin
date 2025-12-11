@@ -655,16 +655,38 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     #cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30)) & (~block_first_5)"  # ← No trades in first 5 days after red month
     # Detect swing low: Current low is minimum in a 5-bar window (2 left, current, 2 right)
     ####################################################
-    window = 5
-    mid = window // 2
-    Swing_Low = data['Low'].rolling(5, center=True).min() == data['Low']
-    Uptrend= data['EMA20'] > data['EMA50']
-    #cond_buy_text = "(data['Swing_Low'] & data['Uptrend'] & (data['VIX_Close'] < 30))"
-    cond_buy_text = "(Swing_Low & Uptrend & (data['VIX_Close'] < 30))"
+    # --- 2-days-ago Swing Low Logic ---
+    # Using your existing swing low logic
+    low_2d_ago = data['Low'].shift(2)
+
+    cond_swing_low = (
+                             data['Low'] > low_2d_ago.shift(0)  # today > 2d ago
+                     ) & (
+                             data['Low'].shift(1) > low_2d_ago  # yesterday > 2d ago
+                     ) & (
+                             data['Low'].shift(3) > low_2d_ago  # 3 days ago > 2d ago
+                     ) & (
+                             data['Low'].shift(4) > low_2d_ago  # 4 days ago > 2d ago
+                     )
+
+    # Mark Swing Low at 2-days-ago row
+    Swing_Low_idx = cond_swing_low[cond_swing_low].index - 2  # get actual index 2 days ago
+
+    # Initialize Buy_Signal column
+    data['Buy_Signal'] = np.nan
+
+    # Assign Buy Price = CLOSE of the swing low day (2-days-ago)
+    data.loc[Swing_Low_idx, 'Buy_Signal'] = data.loc[Swing_Low_idx, 'Close']
+
+    # Optional: Filter by Uptrend + VIX
+    Uptrend = data['EMA20'] > data['EMA50']
+    cond_buy = Uptrend & (data['VIX_Close'] < 30) & data['Buy_Signal'].notna()
+    cond_buy_text =""
+    # Final Buy Signal (price)
+    data.loc[~cond_buy, 'Buy_Signal'] = np.nan
+
     ####################################################
-    cond_buy = eval(cond_buy_text)
-    ################
-    data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
+
     data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
     data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97
     data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08
