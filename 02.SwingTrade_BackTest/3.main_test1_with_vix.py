@@ -108,8 +108,8 @@ def draw_down_chart(total_trades, winning_trades_per, net_profit ):
             all_trades['Buy Date'],
             all_trades['Capital'],
             linestyle='-',
-            color='b',
-            label='Capital Over Time'
+            color='b'
+            #label='Capital Over Time'
         )
 
         # Start annotation
@@ -193,13 +193,24 @@ def draw_down_chart(total_trades, winning_trades_per, net_profit ):
             f'total_trades = {total_trades}',
             f'winning_trade_% = {winning_trades_per}',
             f'net_profit_%_aft_20%_tax_and_charges = {round(net_profit - (net_profit * 0.20),2)}',
+            f'profit_before_tax = {round((final_capital - capital), 2)}',
+            f'net_profit__aft_20%_tax_and_charges = {round((final_capital - capital) - ((final_capital - capital) * 0.20),2)}',
+
         ))
 
+        # anchored_text = AnchoredText(
+        #     textstr,
+        #     loc='lower right',
+        #     frameon=True,
+        #     bbox_to_anchor=(1, 0.15),
+        #     bbox_transform=ax1.transAxes,
+        #     prop=dict(size=8)
+        # )
         anchored_text = AnchoredText(
             textstr,
-            loc='lower right',
+            loc='upper left',
             frameon=True,
-            bbox_to_anchor=(1, 0.15),
+            bbox_to_anchor=(0.02, 0.98),  # 👈 near top-left
             bbox_transform=ax1.transAxes,
             prop=dict(size=8)
         )
