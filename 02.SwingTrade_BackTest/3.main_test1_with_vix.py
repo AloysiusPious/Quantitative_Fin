@@ -42,7 +42,7 @@ def get_vix_by_date(date_str):
 
     # If your vix column is named "VIX"
     return float(row.iloc[0]['Close'])
-def draw_down_chart():
+def draw_down_chart(total_trades, winning_trades_per, net_profit ):
     all_trades = []
     # ---- Load all CSV files and merge ----
     if os.path.isdir(Reports_Dir) and os.listdir(Reports_Dir):
@@ -188,11 +188,11 @@ def draw_down_chart():
 
         # ---- Text Box with parameters ----
         textstr = '\n'.join((
-            f'capital = {capital}',
-            f'no_of_stock_to_trade = {no_of_stock_to_trade}',
-            f'compound = {compound}',
-            f'target_percentage = {target_percentage}',
-            f'stop_loss_percentage = {stop_loss_percentage}',
+            f'logic = {cond_buy_text}',
+            f'max_position = {no_of_stock_to_trade}',
+            f'total_trades = {total_trades}',
+            f'winning_trade_% = {winning_trades_per}',
+            f'net_profit_%_aft_20%_tax_and_charges = {round(net_profit - (net_profit * 0.20),2)}',
         ))
 
         anchored_text = AnchoredText(
@@ -203,13 +203,12 @@ def draw_down_chart():
             bbox_transform=ax1.transAxes,
             prop=dict(size=8)
         )
-
+        anchored_text.patch.set_boxstyle("round,pad=0.5,rounding_size=0.5")
+        ax1.add_artist(anchored_text)
         # ---- Save and show ----
         plt.savefig(f'{Charts_Dir}/draw_down_{symbols_type}_{from_date}_to_{to_date}.png')
         plt.show()
         plt.close()
-
-
 
 def create_master_file(summary_dir, from_date, to_date, capital):
     # Initialize lists to store data
@@ -297,10 +296,12 @@ def create_master_file(summary_dir, from_date, to_date, capital):
 
     # Save Master DataFrame to CSV
     master_df.to_csv(f"{master_dir}/Master_{from_date}_to_{to_date}.csv", index=False)
-
     print(f"Master file created successfully at {master_dir}/Master_{from_date}_to_{to_date}.csv")
+    ###
 
-
+    net_profit = round((sum(total_profit_after_charges) / capital) * 100, 2)
+    draw_down_chart(sum(total_trades), round((sum(total_winning_trades) / sum(total_trades)) * 100, 2) if sum(
+            total_trades) > 0 else 0, round((sum(total_profit_after_charges) / capital) * 100, 2) ,)
 # Function to calculate summary statistics for each stock
 def calculate_summary_per_stock(symbol, report_df, Summary_Dir):
     total_trades = len(report_df)
@@ -596,6 +597,8 @@ def mark_signals(enctoken, symbol, start_date, end_date):
 
     # Indicators
     data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
+    data['EMA50'] = data['Close'].ewm(span=50, adjust=False).mean()
+    data['EMA100'] = data['Close'].ewm(span=100, adjust=False).mean()
     data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
     data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
     data['RSI14'] = talib.RSI(data['Close'], timeperiod=14)
@@ -615,14 +618,15 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     data['StopLoss'] = np.nan
     data['Avg_Down_Level'] = np.nan
     data['Target'] = np.nan
-    #base_cond 2017-2021 ==> 80%, DD:11%
-    #base_cond & cond_buy_2 2017-2021==> 81% , DD :11%
+    global cond_buy_text
     # Buy logic per row
-    base_cond = ((data['EMA20'] > data['EMA200']) & (data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30))
-    cond_buy_1 = (data['RSI14'] < 40)
-    cond_buy_2 = (~block_first_5)  # ← No trades in first 5 days after red month
-    cond_buy = base_cond #& cond_buy_2 #& cond_buy_2 & #cond_buy_3
-
+    cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30))"
+    #cond_buy_text = "((data['EMA20'] > data['EMA200']) & (data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30))"
+    #cond_buy_text = "(data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30) #& (data['RSI14'] < 40)"
+    #cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30)) & (~block_first_5)"  # ← No trades in first 5 days after red month
+    #####################
+    cond_buy = eval(cond_buy_text)
+    ################
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
     data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
     data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97
@@ -715,4 +719,3 @@ get_india_vix_data()
 start_processing_symbols(enctoken, symbols_file, from_date, to_date)
 get_stock_for_reference_date(enctoken, cvs_data_dir, cvs_raw_data, from_date, to_date)
 procee_final_report(Reports_Dir)
-draw_down_chart()
