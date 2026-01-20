@@ -621,6 +621,7 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     # ← Monthly Chart END HERE →#########################################
 
     # Indicators
+    data['EMA5'] = data['Close'].ewm(span=5, adjust=False).mean()
     data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
     data['EMA50'] = data['Close'].ewm(span=50, adjust=False).mean()
     data['EMA100'] = data['Close'].ewm(span=100, adjust=False).mean()
@@ -648,56 +649,42 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     global cond_buy_text
     # Buy logic per row
     #cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30))"
-    #cond_buy_text = "((data['Pct_Below_50EMA'] < -2) & (data['VIX_Close'] < 30) & (~block_first_5))"
+    cond_buy_text = "((data['Pct_Below_50EMA'] < -2) & (data['VIX_Close'] < 30) & (~block_first_5))"
     #cond_buy_text = "(data['EMA20'] > data['EMA50']) & (data['EMA20'].shift(1) <= data['EMA50'].shift(1)) & (data['VIX_Close'] < 30)"
     #cond_buy_text = "((data['EMA20'] > data['EMA200']) & (data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30))"
     #cond_buy_text = "(data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30) #& (data['RSI14'] < 40)"
     #cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30)) & (~block_first_5)"  # ← No trades in first 5 days after red month
     # Detect swing low: Current low is minimum in a 5-bar window (2 left, current, 2 right)
     ####################################################
-    # --- 2-days-ago Swing Low Logic ---
-    # Using your existing swing low logic
-    low_2d_ago = data['Low'].shift(2)
-
-    cond_swing_low = (
-                             data['Low'] > low_2d_ago.shift(0)  # today > 2d ago
-                     ) & (
-                             data['Low'].shift(1) > low_2d_ago  # yesterday > 2d ago
-                     ) & (
-                             data['Low'].shift(3) > low_2d_ago  # 3 days ago > 2d ago
-                     ) & (
-                             data['Low'].shift(4) > low_2d_ago  # 4 days ago > 2d ago
-                     )
-
-    # Mark Swing Low at 2-days-ago row
-    Swing_Low_idx = cond_swing_low[cond_swing_low].index - 2  # get actual index 2 days ago
-
-    # Initialize Buy_Signal column
-    data['Buy_Signal'] = np.nan
-
-    # Assign Buy Price = CLOSE of the swing low day (2-days-ago)
-    data.loc[Swing_Low_idx, 'Buy_Signal'] = data.loc[Swing_Low_idx, 'Close']
-
-    # Optional: Filter by Uptrend + VIX
-    Uptrend = data['EMA20'] > data['EMA50']
-    cond_buy = Uptrend & (data['VIX_Close'] < 30) & data['Buy_Signal'].notna()
-    cond_buy_text =""
-    # Final Buy Signal (price)
-    data.loc[~cond_buy, 'Buy_Signal'] = np.nan
-
     ####################################################
-
-    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
-    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97
-    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08
-
+    # window = 5
+    # mid = window // 2
+    # cond_close_within_4pct = (
+    #         (data['Close'] - data['Low'].shift(2)) < (data['Low'].shift(2) * 0.10)
+    # )
+    # Swing_Low = cond_close_within_4pct & (data['Low'].shift(2) < data['Low']) & (data['Low'].shift(2) < data['Low'].shift(1)) & \
+    #             (data['Low'].shift(3) > data['Low'].shift(2)) & (data['Low'].shift(4) > data['Low'].shift(2))
+    # Uptrend= data['EMA20'] > data['EMA50']
+    # #cond_buy_text = "(data['Swing_Low'] & data['Uptrend'] & (data['VIX_Close'] < 30))"
+    # cond_buy_text = "(Swing_Low & Uptrend & (data['VIX_Close'] < 20))"
+    ####################################################
+    cond_buy = eval(cond_buy_text)
+    ################
+    # Buy price
+    data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
+    # Structure-based StopLoss
+    data['Recent_Low'] = data['Low'].rolling(5).min().shift(1)
+    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Recent_Low']
+    # Risk calculation
+    data.loc[cond_buy, 'Risk'] = (data.loc[cond_buy, 'Buy_Signal'] -data.loc[cond_buy, 'StopLoss'])
+    # Risk-Reward based Target
+    RR = 1.8
+    data.loc[cond_buy, 'Target'] = (data.loc[cond_buy, 'Buy_Signal'] +RR * data.loc[cond_buy, 'Risk'])
     # Cleanup
     data = data.dropna(subset=['EMA20', 'RSI14']).reset_index(drop=True)
     data = data[data['Date'] >= pd.to_datetime(start_date)]
-
     # Save output
     data.to_csv(f"{cvs_data_dir}/{symbol}.csv", index=False)
-
     latest_pct = data['Pct_Below_20EMA'].iloc[-1] if not data.empty else np.nan
     num_signals = data['Buy_Signal'].notna().sum()
     print(f"✅ Processed {symbol} — SHOP w/ RSI: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")

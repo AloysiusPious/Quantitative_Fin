@@ -4,12 +4,17 @@ from swing_util import *
 import concurrent.futures
 import time
 import talib
+from patterns import morning_star
 def get_india_vix_data():
 
     # ---------------- Load or Download ----------------
     if not os.path.exists(vix_file_path):
+        print((enctoken, "INDIA VIX", from_date, to_date, time_frame))
         # ---- Fetch Nifty 50 data ----i have set this function to return "from_date -1"
         vix_data = fetch_kite_data(enctoken, "INDIA VIX", from_date, to_date, interval=time_frame)
+        # 🔥 HARD GUARD (THIS FIXES YOUR ERROR)
+        if vix_data is None or vix_data.empty:
+            raise RuntimeError("❌ INDIA VIX data fetch failed")
         # Ensure Date column is datetime
         vix_data['Date'] = pd.to_datetime(vix_data['Date'])
 
@@ -621,10 +626,12 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     # ← Monthly Chart END HERE →#########################################
 
     # Indicators
+    data['EMA7'] = data['Close'].ewm(span=7, adjust=False).mean()
     data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
     data['EMA50'] = data['Close'].ewm(span=50, adjust=False).mean()
     data['EMA100'] = data['Close'].ewm(span=100, adjust=False).mean()
     data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
+    data['Pct_Below_7EMA'] = (data['Close'] - data['EMA7']) / data['EMA7'] * 100
     data['Pct_Below_20EMA'] = (data['Close'] - data['EMA20']) / data['EMA20'] * 100
     data['Pct_Below_50EMA'] = (data['Close'] - data['EMA50']) / data['EMA50'] * 100
     data['Pct_Above_200EMA'] = (data['Close'] - data['EMA200']) / data['EMA200'] * 100
@@ -639,35 +646,76 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     data['MACD_Line'] = ema12 - ema26
     data['MACD_Signal'] = data['MACD_Line'].ewm(span=9, adjust=False).mean()
     data['MACD_Slope'] = data['MACD_Line'].diff()
-    cond_macd_turn = (data['MACD_Line'] < 0) #& (data['MACD_Line'].diff() > 0)
+    cond_macd_turn = (data['MACD_Line'] < 0) & (data['MACD_Line'].diff() > 0)
     # Columns
     data['Buy_Signal'] = np.nan
     data['StopLoss'] = np.nan
-    data['Avg_Down_Level'] = np.nan
     data['Target'] = np.nan
+    today_green = (data['Close'] > data['Open'])
+    yday_red = (data['Close'].shift(1) < data['Open'].shift(1))
+    db4_red = (data['Close'].shift(2) < data['Open'].shift(2))
     global cond_buy_text
     # Buy logic per row
-    #cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30))"
+    #data['Morning_Star'] = morning_star(data)
+    #cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30) & (data['EMA20'] > data['EMA50']))"
+    # data['Morning_Star'] = morning_star(data)
+    #
+    # past_3_red= (data['Close'].shift(1) < data['Open'].shift(1)) & (data['Close'].shift(2) < data['Open'].shift(2)) & (data['Close'].shift(3) < data['Open'].shift(3))
+    # cond_buy_text = "((data['VIX_Close'] < 30)  & (data['EMA20'] > data['EMA50']) & past_3_red  & today_green)"
     #cond_buy_text = "((data['Pct_Below_50EMA'] < -2) & (data['VIX_Close'] < 30) & (~block_first_5))"
+    #cond_buy_text = "((data['Pct_Below_50EMA'] < -2) & (data['VIX_Close'] < 30) & (~block_first_5) & (data['EMA50'] > data['EMA100']))"
     #cond_buy_text = "(data['EMA20'] > data['EMA50']) & (data['EMA20'].shift(1) <= data['EMA50'].shift(1)) & (data['VIX_Close'] < 30)"
     #cond_buy_text = "((data['EMA20'] > data['EMA200']) & (data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30))"
     #cond_buy_text = "(data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30) #& (data['RSI14'] < 40)"
-    #cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30)) & (~block_first_5)"  # ← No trades in first 5 days after red month
+    #cond_buy_text = "((data['Pct_Below_20EMA'] < -2) & (data['VIX_Close'] < 30)) & (~block_first_5)"  # ← No trades in  first 5 days after red month
+    #three_candle_dwn = (data['Low'].shift(3) > data['Low'].shift(2)) & (data['Low'].shift(2) > data['Low'].shift(1)) & (data['Low'].shift(1) > data['Low'])
+    #cond_buy_text = "(three_candle_dwn & (data['VIX_Close'] < 30) & (data['EMA20'] > data['EMA50']))"
     # Detect swing low: Current low is minimum in a 5-bar window (2 left, current, 2 right)
     ####################################################
-    window = 5
-    mid = window // 2
-    Swing_Low = data['Low'].rolling(5, center=True).min() == data['Low']
-    Uptrend= data['EMA20'] > data['EMA50']
-    #cond_buy_text = "(data['Swing_Low'] & data['Uptrend'] & (data['VIX_Close'] < 30))"
-    cond_buy_text = "(Swing_Low & Uptrend & (data['VIX_Close'] < 30))"
+    window = 21
+    data['Swing_Low_Price'] = data['Low'].shift(1).rolling(window, center=False).min()
+    data['Is_Swing_Low'] = data['Low'].shift(1) == data['Swing_Low_Price']
+    data['High_Not_Over_2pct_From_SwingLow'] = (
+            (data['High'] - data['Swing_Low_Price']) / data['Swing_Low_Price'] <= 0.02)
+    cond_buy_text = "(data['Close'] > data['Open']) & (data['High_Not_Over_2pct_From_SwingLow']) & (data['VIX_Close'] < 30)  & (data['EMA50'] > data['EMA200'])"
     ####################################################
+    # data['Pullback'] = (
+    #         (data['Close'] < data['EMA20']) &
+    #         (data['Close'] > data['EMA50'])
+    # )
+    # data['Momentum_Turn'] = data['Close'] > data['Close'].shift(1)
+    # cond_buy_text = "(data['Pullback'] & data['Momentum_Turn'] &(data['EMA20'] > data['EMA50']) &(data['VIX_Close'] < 30))"
+    ####################################################
+    # data['Fractal_Low'] = (
+    #         (data['Low'].shift(2) < data['Low'].shift(3)) &
+    #         (data['Low'].shift(2) < data['Low'].shift(4)) &
+    #         (data['Low'].shift(2) < data['Low'].shift(1)) &
+    #         (data['Low'].shift(2) < data['Low'])
+    # )
+    #
+    # # Signal comes 2 candles later
+    # data['Fractal_Low'] = data['Fractal_Low'].shift(1)
+    # cond_buy_text = "(data['Fractal_Low'] &(data['EMA20'] > data['EMA50']) &(data['VIX_Close'] < 30))"
+    ######################################################
+    # window = 5
+    # # 1️⃣ Causal swing low (no future candles)
+    # data['Swing_Low_Causal'] = (data['Low'] == data['Low'].rolling(window).min())
+    # data['Swing_Low_Causal_1'] = (data['Low'].shift(1) == data['Low'].shift(1).rolling(window).min())
+    # swing_low = data['Swing_Low_Causal'] | data['Swing_Low_Causal_1']
+    # After calculating EMAs and VIX
+    # Uptrend = (data['EMA50'] > data['EMA200']) # Uptrend check
+    # # Buy condition text (early detection)
+    # data['yday_Pct_Below_20EMA'] = (data['Low'].shift(1) - data['EMA20'].shift(1)) / data['EMA20'].shift(1) * 100
+    # data['tday_Pct_Below_20EMA'] = (data['Low'] - data['EMA20']) / data['EMA20'] * 100
+    # yday_or_tday_pct_Below_20EMA = (data['yday_Pct_Below_20EMA'] < -2) | (data['tday_Pct_Below_20EMA'] < -2)
+    # cond_buy_text = "((data['Swing_Low_Causal']) & (yday_or_tday_pct_Below_20EMA) & (Uptrend) & (data['VIX_Close'] < 30) & today_green & yday_red & db4_red)"
+    ##############################################)#######
+    ######################################################
     cond_buy = eval(cond_buy_text)
     ################
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
     data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
-    data.loc[cond_buy, 'Avg_Down_Level'] = data.loc[cond_buy, 'Buy_Signal'] * 0.97
-    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08
+    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08 #1.08
 
     # Cleanup
     data = data.dropna(subset=['EMA20', 'RSI14']).reset_index(drop=True)
@@ -679,34 +727,51 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     latest_pct = data['Pct_Below_20EMA'].iloc[-1] if not data.empty else np.nan
     num_signals = data['Buy_Signal'].notna().sum()
     print(f"✅ Processed {symbol} — SHOP w/ RSI: Latest % Below EMA20: {latest_pct:.2f}%. Signals: {num_signals}")
+    return int(num_signals) if num_signals else 0
 
 
 
 ##################################################################################################
 def start_processing_symbols(enctoken, symbols_file, from_date, to_date):
+
+    # ---------- Load symbols ----------
     with open('./symbols/' + symbols_file, 'r') as file:
-        stocks = [line.split('#')[0].strip() for line in file if not line.lstrip().startswith('#')]
+        stocks = [
+            line.split('#')[0].strip()
+            for line in file
+            if line.strip() and not line.lstrip().startswith('#')
+        ]
 
     total_stocks = len(stocks)
     print(f"Total number of stocks: {total_stocks}")
 
+    # ---------- Worker ----------
     def process_stock(stock):
         try:
-            mark_signals(enctoken, stock, from_date, to_date)
-            return f"✅ {stock} done"
+            num_signals = mark_signals(enctoken, stock, from_date, to_date)
+            return stock, int(num_signals or 0), None
         except Exception as e:
-            return f"❌ {stock} failed: {e}"
+            return stock, 0, e
 
-    # Parallel execution
+    # ---------- Parallel execution ----------
     start_time = time.time()
-    max_threads = min(10, total_stocks)  # Safe for network I/O
+    total_signals = 0
+    max_threads = min(10, total_stocks)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         results = list(executor.map(process_stock, stocks))
 
-    for res in results:
-        print(res)
+    # ---------- Aggregate results ----------
+    for stock, num_signals, err in results:
+        if err:
+            print(f"❌ {stock} failed: {err}")
+        else:
+            print(f"✅ {stock} done | Signals: {num_signals}")
+            total_signals += num_signals
 
+    # ---------- Summary ----------
     print(f"\n✅ Completed {total_stocks} stocks in {time.time() - start_time:.2f}s")
+    print(f"📊 Total Signals Captured : {total_signals}")
     print("Now will start Trade...")
     time.sleep(0.25)
 
