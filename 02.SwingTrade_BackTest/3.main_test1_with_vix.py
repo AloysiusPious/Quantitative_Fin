@@ -671,13 +671,25 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     #three_candle_dwn = (data['Low'].shift(3) > data['Low'].shift(2)) & (data['Low'].shift(2) > data['Low'].shift(1)) & (data['Low'].shift(1) > data['Low'])
     #cond_buy_text = "(three_candle_dwn & (data['VIX_Close'] < 30) & (data['EMA20'] > data['EMA50']))"
     # Detect swing low: Current low is minimum in a 5-bar window (2 left, current, 2 right)
+    # ####################################################
+    # window = 5
+    # data['Swing_Low_Price'] = data['Low'].rolling(window, center=True).min()
+    # data['Is_Swing_Low'] = data['Low'] == data['Swing_Low_Price']
+    # data['High_Not_Over_2pct_From_SwingLow'] = (
+    #         (data['High'] - data['Swing_Low_Price']) / data['Swing_Low_Price'] <= 0.02)
+    # cond_buy_text = "(data['High_Not_Over_2pct_From_SwingLow']) & (data['VIX_Close'] < 30)  & (data['EMA20'] > data['EMA200'])"
+    # ####################################################
     ####################################################
     window = 21
-    data['Swing_Low_Price'] = data['Low'].shift(1).rolling(window, center=False).min()
-    data['Is_Swing_Low'] = data['Low'].shift(1) == data['Swing_Low_Price']
-    data['High_Not_Over_2pct_From_SwingLow'] = (
-            (data['High'] - data['Swing_Low_Price']) / data['Swing_Low_Price'] <= 0.02)
-    cond_buy_text = "(data['Close'] > data['Open']) & (data['High_Not_Over_2pct_From_SwingLow']) & (data['VIX_Close'] < 30)  & (data['EMA50'] > data['EMA200'])"
+
+    data['Swing_Low_Price'] = data['Low'].rolling(window).min()
+    data['Swing_High_Price'] = data['High'].rolling(window).max()
+    data['Valid_Swing'] = (
+            (data['Low'] == data['Swing_Low_Price']) &
+            ((data['Swing_High_Price'] - data['Swing_Low_Price']) / data['Swing_Low_Price'] > 0.10)
+    )
+    data['Today_Green'] = data['Close'] > data['Open']
+    cond_buy_text = "(data['Today_Green']) & (data['Valid_Swing']) & (data['VIX_Close'] < 30)  & (data['EMA20'] > data['EMA200'])"
     ####################################################
     # data['Pullback'] = (
     #         (data['Close'] < data['EMA20']) &
