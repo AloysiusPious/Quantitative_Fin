@@ -689,7 +689,15 @@ def mark_signals(enctoken, symbol, start_date, end_date):
             ((data['Swing_High_Price'] - data['Swing_Low_Price']) / data['Swing_Low_Price'] > 0.10)
     )
     data['Today_Green'] = data['Close'] > data['Open']
-    cond_buy_text = "(data['Today_Green']) & (data['Valid_Swing']) & (data['VIX_Close'] < 30)  & (data['EMA20'] > data['EMA200'])"
+    #cond_buy_text = "(data['Today_Green']) & (data['Valid_Swing']) & (data['VIX_Close'] < 30)  & (data['EMA20'] > data['EMA200'])"
+    ######## 252 Days Low
+    cond_buy_text = "((data['Low'].rolling(5).min() <= data['Low'].rolling(252).min() * 1.03) \
+    & (data['Close'] > data['Close'].shift(1)) \
+    & (data['RSI14'] > 35) \
+    & (data['RSI14'] < 55) \
+    & ((data['MACD_Line'] - data['MACD_Signal']) < 0) \
+    & (data['Volume'] > data['Volume'].rolling(20).mean() * 1.2))"
+    ##########################
     ####################################################
     # data['Pullback'] = (
     #         (data['Close'] < data['EMA20']) &
@@ -725,10 +733,13 @@ def mark_signals(enctoken, symbol, start_date, end_date):
     ######################################################
     cond_buy = eval(cond_buy_text)
     ################
+    #data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
+    #data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
+    #data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08 #1.08
+    # Open target/stop loss
     data.loc[cond_buy, 'Buy_Signal'] = data.loc[cond_buy, 'Close']
-    data.loc[cond_buy, 'StopLoss'] = data.loc[cond_buy, 'Buy_Signal'] * 0.90
-    data.loc[cond_buy, 'Target'] = data.loc[cond_buy, 'Buy_Signal'] * 1.08 #1.08
-
+    data.loc[cond_buy, 'StopLoss'] = np.nan
+    data.loc[cond_buy, 'Target'] = np.nan
     # Cleanup
     data = data.dropna(subset=['EMA20', 'RSI14']).reset_index(drop=True)
     data = data[data['Date'] >= pd.to_datetime(start_date)]
