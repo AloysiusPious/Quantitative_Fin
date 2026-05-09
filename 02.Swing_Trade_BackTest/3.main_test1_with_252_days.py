@@ -349,8 +349,9 @@ def calculate_summary_per_stock(symbol, report_df, Summary_Dir):
             'Total Charges Paid': 0
         }
 
-    winning_trades = sum(1 for trade in report_df if trade['Trade Status'] == 'Target')
-    losing_trades = total_trades - winning_trades if total_trades > 0 else 0
+    # ✅ No Target/StopLoss exits — winning = profit > 0
+    winning_trades = sum(1 for trade in report_df if trade['Profit Amount'] > 0)
+    losing_trades = total_trades - winning_trades
 
     winning_trade_percentage = (winning_trades / total_trades) * 100
     losing_trade_percentage = (losing_trades / total_trades) * 100
@@ -370,16 +371,11 @@ def calculate_summary_per_stock(symbol, report_df, Summary_Dir):
         'Total Charges Paid': round(total_charges_paid, 2)
     }
 
-    # Create summary DataFrame
     summary_df = pd.DataFrame([summary])
-
-    # Write summary to CSV
     os.makedirs(Summary_Dir, exist_ok=True)
     summary_df.to_csv(f"{Summary_Dir}/{symbol}_summary.csv", index=False)
 
     return summary
-
-
 # Function to calculate the number of holding days
 def calculate_holding_days(buy_date, exit_date):
     return (pd.to_datetime(exit_date) - pd.to_datetime(buy_date)).days
@@ -410,14 +406,51 @@ def process_date(date, date_ref_df, trade_report):
         if not stock_data.empty:
             row = stock_data.iloc[0]
 
-            # ✅ Already bought this stock this month?
             already_bought_this_month = (
                 symbol in last_buy_month and last_buy_month[symbol] == current_month
             )
 
+            # ================= SIGNAL-BASED EXIT =================
+            # If a new buy signal fires and we already hold this stock → exit first at today's close
+            if 'Buy_Signal' in row and not pd.isna(row['Buy_Signal']):
+                positions_to_exit = [
+                    p for p in active_positions
+                    if p['symbol'] == symbol
+                ]
+
+                for position in positions_to_exit:
+                    sell_price = row['Close']
+                    profit_amount = (sell_price - position['buy_price']) * position['shares']
+                    invested_amount = position['buy_price'] * position['shares']
+                    profit_percent = (profit_amount / invested_amount) * 100
+
+                    trade_report[symbol].append({
+                        'Buy Date': position['buy_date'],
+                        'Bought Price': round_to_nearest_0_05(position['buy_price']),
+                        'Quantity Bought': position['shares'],
+                        'Invested Amount': round_to_nearest_0_05(invested_amount),
+                        'Stop Loss': None,
+                        'Target': None,
+                        'Exited Date': date,
+                        'Exited Price': round_to_nearest_0_05(sell_price),
+                        'Profit Amount': round_to_nearest_0_05(profit_amount),
+                        'Trade Status': 'SignalExit',
+                        'No of holding Days': calculate_holding_days(position['buy_date'], date),
+                        'Profit %': round_to_nearest_0_05(profit_percent)
+                    })
+
+                    final_capital += profit_amount
+                    if compound:
+                        capital_per_stock = final_capital / no_of_stock_to_trade
+
+                    print(f"SignalExit {symbol} on {date} at {sell_price} (new signal fired)")
+
+                # Remove exited positions
+                if positions_to_exit:
+                    active_positions = [p for p in active_positions if p['symbol'] != symbol]
+
             # ================= BUY LOGIC =================
             if 'Buy_Signal' in row and not pd.isna(row['Buy_Signal']):
-
                 active_for_stock = [p for p in active_positions if p['symbol'] == symbol]
 
                 if (len(active_for_stock) == 0
@@ -432,8 +465,8 @@ def process_date(date, date_ref_df, trade_report):
                         'symbol': symbol,
                         'buy_date': date,
                         'buy_price': buy_price,
-                        'target_price': None,       # ✅ No target
-                        'stop_loss_price': None,    # ✅ No stop loss
+                        'target_price': None,
+                        'stop_loss_price': None,
                         'shares': shares_to_buy
                     })
 
@@ -452,7 +485,6 @@ def process_date(date, date_ref_df, trade_report):
                         'Profit %': None
                     }
 
-                    # ✅ Stamp this month so we skip further signals this month
                     last_buy_month[symbol] = current_month
                     print(f"Bought {symbol} on {date} at {buy_price}")
 
@@ -462,42 +494,37 @@ def process_date(date, date_ref_df, trade_report):
 
             if not last_day_data.empty:
                 last_close_price = last_day_data.iloc[-1]['Close']
+                last_exit_date = last_day_data.iloc[-1]['Date']
 
-                for position in active_positions:
-                    if position['symbol'] == symbol:
-                        profit_amount = (last_close_price - position['buy_price']) * position['shares']
-                        invested_amount = position['buy_price'] * position['shares']
-                        profit_percent = (profit_amount / invested_amount) * 100
+                positions_to_exit = [p for p in active_positions if p['symbol'] == symbol]
 
-                        trade_report[symbol].append({
-                            'Buy Date': position['buy_date'],
-                            'Bought Price': round_to_nearest_0_05(position['buy_price']),
-                            'Quantity Bought': position['shares'],
-                            'Invested Amount': round_to_nearest_0_05(invested_amount),
-                            'Stop Loss': None,
-                            'Target': None,
-                            'Exited Date': last_day_data.iloc[-1]['Date'],
-                            'Exited Price': round_to_nearest_0_05(last_close_price),
-                            'Profit Amount': round_to_nearest_0_05(profit_amount),
-                            'Trade Status': 'LastDayClose',
-                            'No of holding Days': calculate_holding_days(
-                                position['buy_date'],
-                                last_day_data.iloc[-1]['Date']
-                            ),
-                            'Profit %': round_to_nearest_0_05(profit_percent)
-                        })
+                for position in positions_to_exit:
+                    profit_amount = (last_close_price - position['buy_price']) * position['shares']
+                    invested_amount = position['buy_price'] * position['shares']
+                    profit_percent = (profit_amount / invested_amount) * 100
 
-                        final_capital += profit_amount
+                    trade_report[symbol].append({
+                        'Buy Date': position['buy_date'],
+                        'Bought Price': round_to_nearest_0_05(position['buy_price']),
+                        'Quantity Bought': position['shares'],
+                        'Invested Amount': round_to_nearest_0_05(invested_amount),
+                        'Stop Loss': None,
+                        'Target': None,
+                        'Exited Date': last_exit_date,
+                        'Exited Price': round_to_nearest_0_05(last_close_price),
+                        'Profit Amount': round_to_nearest_0_05(profit_amount),
+                        'Trade Status': 'LastDayClose',
+                        'No of holding Days': calculate_holding_days(position['buy_date'], last_exit_date),
+                        'Profit %': round_to_nearest_0_05(profit_percent)
+                    })
 
-                        if compound:
-                            capital_per_stock = final_capital / no_of_stock_to_trade
+                    final_capital += profit_amount
+                    if compound:
+                        capital_per_stock = final_capital / no_of_stock_to_trade
 
-                        print(f"Sold {symbol} on {last_day_data.iloc[-1]['Date']} at {last_close_price} (Last day close)")
+                    print(f"Sold {symbol} on {last_exit_date} at {last_close_price} (Last day close)")
 
-                # ✅ Clear all positions for this symbol after last day exit
                 active_positions = [p for p in active_positions if p['symbol'] != symbol]
-######################### ACTUAL TRADE BEGINS #############################
-
 def get_stock_for_reference_date(enctoken, cvs_data_dir, cvs_raw_data, start_date, end_date):
     file_path = f'{cvs_raw_data}/stock_date_ref.csv'
 
@@ -809,6 +836,7 @@ capital_per_stock = capital / no_of_stock_to_trade
 portfolio = {}
 trade_report = {}
 final_capital = capital
+last_buy_month = {}   # ✅ ADD THIS
 ##############
 remove_directory()
 create_directory(symbols_type, from_date, to_date)
