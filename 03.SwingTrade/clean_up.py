@@ -3,7 +3,7 @@ import shutil
 import glob
 
 def remove_directory():
-    directories_to_remove = ["Reports", "Charts", "Summary", "Master", "Cvs_Data"]
+    directories_to_remove = ["reports","computed"]
     #directories_to_remove = ["Reports", "Charts", "Summary", "Master"]
     for directory in directories_to_remove:
         for dir_path in glob.glob(f'*{directory}*'):
