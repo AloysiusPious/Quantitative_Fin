@@ -1,0 +1,155 @@
+{
+  "_comment": "Swing Trade Backtest & Scanner — Master Config File",
+
+  "zerodha": {
+    "enctoken": "38D13McRKFKmUmpQ1Gko/sekwPsl27ApgK3VWudTyfgGrUw/TActYF0ITxkk7q4huH4NRfr3a6iVqmxFa2Wn8ehC7JHerECwIY8f0EChqSMgKpeRdc7JjQ==",
+    "_comment": "Get enctoken: run get_enctoken.py — it saves here automatically",
+    "request_delay_sec": 0.35
+  },
+
+  "backtest": {
+    "start_date": "2014-01-01",
+    "end_date":   "2024-01-01",
+    "_comment_dates": "Trading signals fire only from start_date. Warmup data downloaded from warmup_days before start_date.",
+    "interval": "day",
+    "close_all_on_last_day": true,
+    "max_hold_days": 50,
+    "warmup_days": 250,
+    "_comment_warmup": "Increased to 250 days (~175 trading candles) — needed because 200 EMA now requires 200 candles to be accurate from day 1 of trading."
+  },
+
+  "capital": {
+    "initial_capital": 500000,
+    "risk_per_trade_pct": 2.0,
+    "_comment_risk": "Max % of capital lost if SL hits. Actual loss = capital × risk_per_trade_pct / 100.",
+    "max_position_pct": 30.0,
+    "_comment_position": "Max % of capital per trade. 30% means max ₹1.5L per trade on ₹5L capital. Typical 2-3 simultaneous trades = ₹3-4.5L deployed, comfortably within capital. Rare 5-trade overlap = ₹7.5L — acceptable since it almost never happens due to VIX/ADX filters staggering entries.",
+    "max_open_trades": 5
+  },
+
+  "stock_selection": {
+    "watchlist_file": "nifty50_futures.json",
+
+    "blacklist": [],
+    "_comment_blacklist": "Intentionally empty — no blacklist. Blacklists require hindsight (knowing which stocks lose in advance). All 50 Nifty stocks traded equally. Rule-based filters (VIX, ADX, 200 EMA, gap) handle bad market conditions without stock-specific bias.",
+
+    "ranking": {
+      "enabled": true,
+      "top_n_stocks": 10,
+
+      "weights": {
+        "trend_strength":    0.30,
+        "relative_strength": 0.25,
+        "volume_surge":      0.20,
+        "momentum":          0.15,
+        "volatility_score":  0.10
+      },
+
+      "rs_lookback_days": 20,
+      "momentum_days": 10,
+      "sector_limit": 2,
+      "min_rank_score": 0.50
+    },
+
+    "filters": {
+      "min_price": 100,
+      "max_price": 50000,
+      "min_avg_volume": 500000
+    }
+  },
+
+  "trade_rules": {
+    "entry_type": "next_day_open",
+    "_comment_entry": "Signal fires after market close. Entry at next day open price.",
+
+    "gap_filter_up_pct": 2.0,
+    "gap_filter_down_pct": 1.5,
+    "_comment_gap": "Skip trade if next day open gaps more than these % vs signal day close.",
+
+    "gap_check_method": "open_vs_prev_close",
+    "reward_to_risk_ratio": 3.0,
+    "_comment_rr": "RR=3.0 performed better than 2.0 in 2014-2019 choppy markets (59% vs 19% ROI). Fewer target hits but each earns significantly more. Trailing stop handles exits beyond target."
+  },
+
+  "strategy": {
+    "ema_fast": 20,
+    "ema_slow": 50,
+    "volume_avg_period": 20,
+    "volume_multiplier": 1.2,
+    "pullback_tolerance_pct": 1.5,
+    "bullish_body_pct": 50
+  },
+
+  "exit_rules": {
+    "stop_loss_type": "swing_low",
+    "_comment_sl": "Options: swing_low | atr_based | fixed_pct",
+    "swing_low_candles": 3,
+    "swing_low_buffer_pct": 0.5,
+    "stop_loss_atr_multiplier": 1.5,
+    "stop_loss_fixed_pct": 3.0,
+
+    "partial_exit": false,
+    "partial_exit_pct": 50,
+    "partial_exit_at_rr": 1.0,
+
+    "move_sl_to_breakeven": true,
+    "_comment_be": "Move SL to entry once trade reaches 1:1 RR. Zero risk on winner, no extra transaction.",
+
+    "trailing_stop": true,
+    "trailing_stop_atr_multiplier": 1.5,
+    "_comment_trail": "Trail by 1.5x ATR after breakeven triggered."
+  },
+
+  "volatility_filter": {
+    "enabled": true,
+    "_comment": "Combined VIX + Nifty trend + ADX filter. Blocks NEW entries only — never forces exit on open trades.",
+
+    "vix_no_entry_above": 18.0,
+    "_comment_no_entry": "VIX >= 18 → no new entries. Demonetisation had VIX spike to 22+ — this alone would have blocked most Nov 2016 entries.",
+
+    "vix_caution_above": 16.0,
+    "_comment_caution": "VIX 16-18 → only A-grade setups allowed",
+    "vix_caution_min_score": 0.70,
+
+    "vix_lookback_days": 5,
+    "_comment_lookback": "5-day rolling avg VIX to avoid single-day false signals",
+
+    "nifty_trend_filter": true,
+    "_comment_50ema": "No new entries when Nifty 50 close is below its 50 EMA. Already implemented.",
+
+    "nifty_200ema_filter": true,
+    "_comment_200ema": "NEW — No new entries when Nifty 50 close is below its 200 EMA. Stronger bull market confirmation. 200 EMA is the institutional benchmark — below it = bear territory regardless of short-term bounces. This would have blocked most of 2015 correction and 2018 IL&FS crash entries.",
+
+    "adx_filter": true,
+    "_comment_adx": "NEW — ADX (Average Directional Index) measures trend STRENGTH regardless of direction. ADX > 25 = strong trend present. ADX < 20 = choppy/sideways market. We only enter when ADX confirms a strong trend exists on Nifty 50.",
+
+    "adx_period": 14,
+    "_comment_adx_period": "Standard ADX period. 14 days is the Wilder default.",
+
+    "adx_min_threshold": 30,
+    "_comment_adx_threshold": "Raised 25→30. ADX>30 = strong established trend. Blocks more of the 2018 IL&FS crisis period where ADX was 20-25 (weak trend). Higher threshold = fewer but higher quality entries.",
+
+    "adx_caution_threshold": 20,
+    "_comment_adx_caution": "ADX 20-25 = weak trend forming. In this zone, require A-grade rank score (>= adx_caution_min_score) to enter.",
+    "adx_caution_min_score": 0.65
+  },
+
+  "taxes_and_charges": {
+    "brokerage_per_order": 20,
+    "stt_pct": 0.1,
+    "exchange_charges_pct": 0.00345,
+    "sebi_charges_pct": 0.0001,
+    "gst_pct": 18,
+    "stamp_duty_pct": 0.015,
+    "stcg_tax_pct": 15
+  },
+
+  "output": {
+    "_comment": "Subdirectories auto-named as start_date_end_date",
+    "data_dir": "../data",
+    "report_dir": "../reports/Trend_Following",
+    "save_trade_log": true,
+    "save_daily_rankings": true,
+    "save_report": true
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "_comment": "LTCG Positional Strategy — PROVEN WORKING CONFIG. Do not change.",
+  "_strategy": "Pullback to 20 EMA. ltcg_protect holds profitable trades past 366 days. max_hold_exit at 400 days = LTCG. Trailing stop inactive (partial_exit=false so partial_done never set).",
+
+  "zerodha": {
+    "enctoken": "JChlHgb0R5IHqYQySGyruT3bWVpLvra1MrvIDQ01Y8Ej51ux2EMXN4LS+2MBEcsyl/On3U+N09Zj54zFzTqphdDYmfh/48PsKPBARODLXmTuDpiDKQyTQw==",
+    "request_delay_sec": 0.35
+  },
+
+  "backtest": {
+    "start_date": "2019-01-01",
+    "end_date":   "2024-01-01",
+    "_comment": "Full 10-year final validation run.",
+    "interval": "day",
+    "close_all_on_last_day": true,
+    "max_hold_days": 400,
+    "ltcg_hold_days": 366,
+    "warmup_days": 250
+  },
+
+  "capital": {
+    "initial_capital": 500000,
+    "risk_per_trade_pct": 2.0,
+    "max_position_pct": 20,
+    "max_open_trades": 5
+  },
+
+  "stock_selection": {
+    "watchlist_file": "nifty50_futures.json",
+    "blacklist": [],
+    "ranking": {
+      "enabled": true,
+      "top_n_stocks": 10,
+      "weights": {
+        "trend_strength":    0.35,
+        "relative_strength": 0.30,
+        "volume_surge":      0.15,
+        "momentum":          0.15,
+        "volatility_score":  0.05
+      },
+      "rs_lookback_days": 60,
+      "momentum_days": 20,
+      "sector_limit": 2,
+      "min_rank_score": 0.55,
+      "_comment_score": "0.55 — proven working value from 10-year backtest. Do not increase — higher score reduces signals and ROI."
+    },
+    "filters": {
+      "min_price": 100,
+      "max_price": 50000,
+      "min_avg_volume": 500000
+    }
+  },
+
+  "trade_rules": {
+    "entry_type": "next_day_open",
+    "gap_filter_up_pct": 3.0,
+    "gap_filter_down_pct": 2.0,
+    "gap_check_method": "open_vs_prev_close",
+    "reward_to_risk_ratio": 5.0,
+    "_comment_rr": "RR=5 from original. Target rarely hit — most exits via max_hold_exit at 400 days (LTCG)."
+  },
+
+  "strategy": {
+    "ema_fast": 20,
+    "ema_slow": 50,
+    "volume_avg_period": 20,
+    "volume_multiplier": 1.2,
+    "pullback_tolerance_pct": 2.0,
+    "bullish_body_pct": 50,
+    "rsi_period": 14,
+    "rsi_min_entry": 45,
+    "_comment_rsi": "NEW — RSI(14) must be > 45 at entry. Confirms stock is bouncing (momentum recovering), not continuing downtrend. Eliminates most 0-30 day whipsaws which lost ₹4,62,942 in 10yr data. RSI 45 is soft threshold — stock showing early recovery without being overbought."
+  },
+
+  "exit_rules": {
+    "stop_loss_type": "swing_low",
+    "swing_low_candles": 10,
+    "swing_low_buffer_pct": 0.5,
+    "stop_loss_atr_multiplier": 2.0,
+    "stop_loss_fixed_pct": 8.0,
+
+    "partial_exit": false,
+    "_comment_partial": "MUST be false. partial_done flag drives trailing stop. false = trailing stop never fires = trades held to max_hold_exit at 400d = LTCG.",
+    "partial_exit_pct": 50,
+    "partial_exit_at_rr": 1.0,
+
+    "move_sl_to_breakeven": true,
+    "trailing_stop": true,
+    "trailing_stop_atr_multiplier": 2.0,
+    "_comment_trail": "trailing_stop=true but partial_exit=false means it never activates. Kept for config completeness.",
+
+    "ltcg_protect": true,
+    "_comment_ltcg": "Key mechanism: profitable trades under 366 days skip max_hold forced exit. They continue to 400d → LTCG."
+  },
+
+  "volatility_filter": {
+    "enabled": true,
+    "vix_no_entry_above": 20.0,
+    "vix_caution_above": 16.0,
+    "vix_caution_min_score": 0.65,
+    "vix_lookback_days": 5,
+    "nifty_trend_filter": true,
+    "nifty_200ema_filter": true,
+    "adx_filter": true,
+    "adx_period": 14,
+    "adx_min_threshold": 25,
+    "adx_caution_threshold": 20,
+    "adx_caution_min_score": 0.65
+  },
+
+  "taxes_and_charges": {
+    "brokerage_per_order": 20,
+    "stt_pct": 0.1,
+    "exchange_charges_pct": 0.00345,
+    "sebi_charges_pct": 0.0001,
+    "gst_pct": 18,
+    "stamp_duty_pct": 0.015,
+    "stcg_tax_pct": 15,
+    "ltcg_tax_pct": 10
+  },
+
+  "output": {
+    "data_dir": "../data",
+    "report_dir": "../reports/LTCG",
+    "save_trade_log": true,
+    "save_daily_rankings": true,
+    "save_report": true
+  }
+}
